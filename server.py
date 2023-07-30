@@ -16,8 +16,6 @@ import data
 
 data.init()
 
-# The server should cache the AI generated descriptions, etc. in a database and only change them when the file or directory is updated, or new additions are found.
-
 # Helpful info: https://datatracker.ietf.org/doc/html/rfc4266
 
 chat_model = 'gpt-4'
@@ -86,7 +84,7 @@ async def get_tell(reader):
 def wrapper(func, args):
     return func(**args)
 
-# Need to redo this one completely. Maybe use the database. Not sure. The hack used is just too messy. 
+# Will replace with a database search.
 def simple_search(query):
     cmd = ['tracker3', 'search', query]
     result = subprocess.run(cmd, stdout=subprocess.PIPE)
@@ -138,8 +136,7 @@ async def generate_ai_response(giap_data, parameters):
     return await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
 
 async def get_item_info(name, path):
-    # Partially rewritten. Will not work yet. 
-
+    # Doesn't handle not found item yet...
     last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
     if last_modified == data.last_modified(name, path):
         return data.item_info(name, path)
@@ -318,6 +315,10 @@ async def handle_client(reader, writer):
     writer.close()
 
 async def start_server(host, port):
+    # Do initial scan of files...
+    print("Checking for new files...")
+    await get_item_info('', ROOT_DIR)
+    print("Starting server...")
     server = await asyncio.start_server(handle_client, host, port)
     async with server:
         await server.serve_forever()

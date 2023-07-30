@@ -69,63 +69,6 @@ def create_multipart_message(ask_responses):
                 msg.attach(MIMEText(f'Content-Disposition: form-data; name="{var}"\r\n\r\n{choice}'))
     return msg.as_string()
 
-# Need to adjust to have the variable type and then actually grab the file and its MIME type.
-class AskDialog(tk.simpledialog.Dialog):
-    def __init__(self, parent, title=None, ask_inputs=None):
-        self.ask_inputs = ask_inputs
-        self.results = []
-        tk.simpledialog.Dialog.__init__(self, parent, title)
-
-    def body(self, master):
-        self.widgets = []
-        for i, (ask_type, ask_prompt, ask_var, ask_choices) in enumerate(self.ask_inputs):
-            tk.Label(master, text=ask_prompt).grid(row=i)
-            if ask_type == "Ask":
-                entry = tk.Entry(master)
-                entry.grid(row=i, column=1)
-                self.widgets.append(entry)
-            elif ask_type == "Choose":
-                if ask_choices:
-                    ask_choices_list = ask_choices
-                    var = tk.StringVar(value=ask_choices_list[0])
-                    dropdown = tk.OptionMenu(master, var, *ask_choices_list)
-                    dropdown.grid(row=i, column=1)
-                    self.widgets.append((dropdown, var))
-            elif ask_type == "Select":
-                if ask_choices:
-                    ask_choices_list = ask_choices
-                    listbox = tk.Listbox(master, selectmode=tk.MULTIPLE)
-                    listbox.grid(row=i, column=1)
-                    for choice in ask_choices_list:
-                        listbox.insert(tk.END, choice)
-                    self.widgets.append(listbox)
-            elif ask_type == "ChooseFile":
-                var = tk.StringVar()
-                button = tk.Button(master, text="Select File", command=lambda: var.set(tk.filedialog.askopenfilename()))
-                button.grid(row=i, column=1)
-                self.widgets.append((button, var))
-        return self.widgets[0]
-
-    def apply(self):
-        results = {}
-        for i, widget in enumerate(self.widgets):
-            ask_type, _, ask_var, _ = self.ask_inputs[i]  # get ask_type and ask_var
-            result = {}
-            if isinstance(widget, tk.Entry):
-                result["type"] = "Ask"
-                result["value"] = widget.get()
-            elif isinstance(widget, tuple) and isinstance(widget[0], tk.Button):
-                result["type"] = "ChooseFile"
-                result["value"] = widget[1].get()
-            elif isinstance(widget, tk.Listbox):
-                result["type"] = "Select"
-                result["value"] = [widget.get(i) for i in widget.curselection()]
-            else:  # OptionMenu for "Choose"
-                result["type"] = "Choose"
-                result["value"] = widget[1].get()
-            results[ask_var] = result
-        self.results = results
-
 # Need to adjust so it can connect to different servers. 
 class GopherClient:
 
@@ -422,5 +365,62 @@ class GopherClient:
         # Update the HTMLLabel with the new HTML
         self.chat_box.set_html(new_html)
 
+# Need to adjust to have the variable type and then actually grab the file and its MIME type.
+class AskDialog(tk.simpledialog.Dialog):
+    def __init__(self, parent, title=None, ask_inputs=None):
+        self.ask_inputs = ask_inputs
+        self.results = []
+        tk.simpledialog.Dialog.__init__(self, parent, title)
+
+    def body(self, master):
+        self.widgets = []
+        for i, (ask_type, ask_prompt, ask_var, ask_choices) in enumerate(self.ask_inputs):
+            tk.Label(master, text=ask_prompt).grid(row=i)
+            if ask_type == "Ask":
+                entry = tk.Entry(master)
+                entry.grid(row=i, column=1)
+                self.widgets.append(entry)
+            elif ask_type == "Choose":
+                if ask_choices:
+                    ask_choices_list = ask_choices
+                    var = tk.StringVar(value=ask_choices_list[0])
+                    dropdown = tk.OptionMenu(master, var, *ask_choices_list)
+                    dropdown.grid(row=i, column=1)
+                    self.widgets.append((dropdown, var))
+            elif ask_type == "Select":
+                if ask_choices:
+                    ask_choices_list = ask_choices
+                    listbox = tk.Listbox(master, selectmode=tk.MULTIPLE)
+                    listbox.grid(row=i, column=1)
+                    for choice in ask_choices_list:
+                        listbox.insert(tk.END, choice)
+                    self.widgets.append(listbox)
+            elif ask_type == "ChooseFile":
+                var = tk.StringVar()
+                button = tk.Button(master, text="Select File", command=lambda: var.set(tk.filedialog.askopenfilename()))
+                button.grid(row=i, column=1)
+                self.widgets.append((button, var))
+        return self.widgets[0]
+
+    def apply(self):
+        results = {}
+        for i, widget in enumerate(self.widgets):
+            ask_type, _, ask_var, _ = self.ask_inputs[i]  # get ask_type and ask_var
+            result = {}
+            if isinstance(widget, tk.Entry):
+                result["type"] = "Ask"
+                result["value"] = widget.get()
+            elif isinstance(widget, tuple) and isinstance(widget[0], tk.Button):
+                result["type"] = "ChooseFile"
+                result["value"] = widget[1].get()
+            elif isinstance(widget, tk.Listbox):
+                result["type"] = "Select"
+                result["value"] = [widget.get(i) for i in widget.curselection()]
+            else:  # OptionMenu for "Choose"
+                result["type"] = "Choose"
+                result["value"] = widget[1].get()
+            results[ask_var] = result
+        self.results = results
+        
 gc = GopherClient('localhost', 10070)
 gc.start()
