@@ -1,5 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, simpledialog
+from markdown import markdown
+from tkhtmlview import HTMLLabel
 import asyncio
 import aiofiles
 import os
@@ -12,6 +14,16 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import mimetypes
+import openai
+
+import time
+from datetime import datetime, timezone
+
+chat_model = 'gpt-4'
+
+def chat_with_gpt(model, messages):
+    response = openai.ChatCompletion.create(model=model, messages=messages)
+    return response['choices'][0]['message']['content'].strip()
 
 def generate_tell(ask_responses):
     tell_string = "+TELL\n"
@@ -114,6 +126,7 @@ class AskDialog(tk.simpledialog.Dialog):
             results[ask_var] = result
         self.results = results
 
+# Need to adjust so it can connect to different servers. 
 class GopherClient:
 
     ITEM_TYPES = {
@@ -237,6 +250,7 @@ class GopherClient:
         await writer.wait_closed()
 
     def start(self):
+#        asyncio.run(gc.fetch(''))
         root = tk.Tk()
         root.title("Gopher+ Client")
         style = ttk.Style()
@@ -268,6 +282,10 @@ class GopherClient:
         back_button = tk.Button(root, text="Back", command=self.go_back)
         back_button.pack()
         self.back_button = back_button  # keep a reference to the back_button
+
+        chat_button = tk.Button(root, text="Chat", command=self.chat_window)
+        chat_button.pack()
+
         if len(self.menu_history) <= 1:
             self.back_button.config(state=tk.DISABLED)  # Initially disable the back button
 
@@ -315,6 +333,94 @@ class GopherClient:
             if len(self.menu_history) <= 1:
                 self.back_button.config(state=tk.DISABLED)  # disable the back button if we are at the start
 
+    def chat_window(self):
+        if not hasattr(self, 'chat_history'):
+            self.chat_history = []  # store chat history as list of tuples (source, text)
+
+        chat_root = tk.Toplevel(self.root)  # create a new window 
+        chat_root.title('Gopher Chat')
+
+        # Create HTMLLabel widget to display chat history
+        self.chat_box = HTMLLabel(chat_root, html="")
+        self.chat_box.pack(fill=tk.BOTH, expand=True)
+
+        input_frame = tk.Frame(chat_root)
+        input_frame.pack(fill=tk.X)
+
+        self.input_box = tk.Entry(input_frame)
+        self.input_box.grid(row=0, column=0, sticky=tk.W+tk.E)
+        self.input_box.bind('<Return>', lambda _: self.process_prompt())  # Bind Return key
+
+        chat_button = tk.Button(input_frame, text='Send', command=self.process_prompt)
+        chat_button.grid(row=0, column=1)
+
+        input_frame.grid_columnconfigure(0, weight=1)
+        input_frame.grid_columnconfigure(1, weight=0)
+
+        self.update_chat_box()
+        chat_root.mainloop()
+
+    
+    def process_prompt(self):
+        prompt = self.input_box.get()
+        if prompt:
+            self.chat_history.append(('User', prompt))  # add user prompt to history
+            self.input_box.delete(0, tk.END)  # clear input box
+
+            # Check if we need to gather additional information. 
+            while True:
+                system_message = {"role": "system", "content": f"You are a helpful assistant. Before you can repsond to the user, you must double check to make sure you don't need to perform any internal commands. You can perform a number of operations, or just answer questions in general. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nDo you need to perform any additional functions before answering responding to the user? Here are the following options:\n- fetch [path, without leading /, so just fetch if you're fetching root]: fetches an item from the current gopher server.\n- none (by itself): specifies that there's no need for additional information and to continue to the response stage.\n Please select a command to execute or none. Your response must start with a valid command."}
+                messages = [{"role": role.lower(), "content": content} for role, content in self.chat_history]
+                messages.insert(0, system_message)            
+
+                # Process prompt.
+                response = chat_with_gpt(chat_model, messages)
+                # Split the response by space
+                parts = response.split(' ', 1)  # The second argument (1) ensures the string is split at the first occurrence of a space
+
+                # Set command and parameters
+                command = parts[0].lower()
+                print(command)
+                parameters = ""
+
+                # Check if there are any parameters (i.e., the string contained at least one space)
+                if len(parts) > 1:
+                    parameters = parts[1]
+                    
+                if command == "none":
+                    break
+                else:
+                    result = "Error. Unknown command"
+                    if command == "fetch":
+                        asyncio.run(gc.fetch(parameters))
+                        # I need to tell the AI what each entry is. 
+                        result = ""
+                        for item in self.menu:
+                            print(item)
+                            result += ' | '.join(item) + '\n'
+
+                    self.chat_history.append(('System', f"System command executed... {response}\nResult:\n{result}"))
+
+            system_message = {"role": "system", "content": f"You are a helpful assistant. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nRespond to the most recent user prompt. Be polite, and semi formal, but not obnoxious or stuck up."}
+            messages = [{"role": role.lower(), "content": content} for role, content in self.chat_history]
+            messages.insert(0, system_message)            
+            response = chat_with_gpt(chat_model, messages)
+            self.chat_history.append(('Assistant', response))  # add assistant prompt to history
+
+            # Update chat box with the new history
+            self.update_chat_box()
+
+    def update_chat_box(self):
+        new_html = "<!DOCTYPE html><html><body>"
+        for role, message in self.chat_history:
+            if role != "System":
+                # Convert Markdown message to HTML
+                message_html = markdown(message)
+                # Add message to new HTML
+                new_html += f"<p><b>{role}</b>: {message_html}</p>"
+        new_html += "</body></html>"
+        # Update the HTMLLabel with the new HTML
+        self.chat_box.set_html(new_html)
+
 gc = GopherClient('localhost', 10070)
-asyncio.run(gc.fetch(''))
 gc.start()

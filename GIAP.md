@@ -1,6 +1,6 @@
 # GIAP (Gopher+ Input and AI Prompt Document Format (".giap"))
 
-One of the additions for Gopher+AI that should be core to the system is the inclusion of interactive services that can be accessed by large language models. GIAP files define various parameters that allow for easy deployment of such services by defining the model, creating predefined prompt sets, etc. The current design is just a draft and is subject to change.
+One of the additions for Gopher+NLP that should be core to the system is the inclusion of interactive services that can be accessed by large language models. GIAP files define various parameters that allow for easy deployment of such services by defining the model, creating predefined prompt sets, etc. The current design is just a draft and is subject to change.
 
 ## 1. Introduction
 

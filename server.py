@@ -12,6 +12,10 @@ import subprocess
 import urllib.parse
 import yaml
 
+import data
+
+data.init()
+
 # The server should cache the AI generated descriptions, etc. in a database and only change them when the file or directory is updated, or new additions are found.
 
 # Helpful info: https://datatracker.ietf.org/doc/html/rfc4266
@@ -82,6 +86,7 @@ async def get_tell(reader):
 def wrapper(func, args):
     return func(**args)
 
+# Need to redo this one completely. Maybe use the database. Not sure. The hack used is just too messy. 
 def simple_search(query):
     cmd = ['tracker3', 'search', query]
     result = subprocess.run(cmd, stdout=subprocess.PIPE)
@@ -132,15 +137,33 @@ async def generate_ai_response(giap_data, parameters):
     # Here, we're using run_in_executor to run the API call in a separate thread.
     return await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
 
+async def get_item_info(name, path):
+    # Partially rewritten. Will not work yet. 
 
-async def get_item_type(name, path):
+    last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
+    if last_modified == data.last_modified(name, path):
+        return data.item_info(name, path)
+    
+    # Need better info generation. 
     if os.path.isdir(path):
-        # Get the last-modified date of the directory
-        last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
+        # Do a directory listing, and pull info for each entry.
+        names = os.listdir(path)
+        items = ""
+        for iname in names:
+            item_type, info_line = await get_item_info(iname, os.path.join(path, iname))  # unpack both return values
+            items += info_line + "\n"
 
         # Generate the +INFO line
-        description = f"Directory {name}"
+        wrapped_func = functools.partial(chat_with_gpt, chat_model, [
+            {"role": "system", "content": "You are a gopher client assistor categorizing files. Summarize the following directory listing."},
+            {"role": "user", "content": items}
+        ])
+
+        # Note: the OpenAI API call is not thread-safe and might block the event loop.
+        # Here, we're using run_in_executor to run the API call in a separate thread.
+        description = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
         info_line = f"+INFO: {ITEM_TYPES.get('directory')}\t{name}\t{description}\tapplication/gopher-menu\t-1\t{last_modified}"
+        data.item_info(name, path, last_modified, ITEM_TYPES.get('directory'), info_line)
         return ITEM_TYPES.get('directory'), info_line
 
     extension = get_extension(name)
@@ -150,9 +173,6 @@ async def get_item_type(name, path):
 
     # Get the size of the file
     size = os.path.getsize(path)
-
-    # Get the last-modified date of the file
-    last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
 
     # Check if basic known extensions, including giap
     if extension == "giap":
@@ -172,16 +192,16 @@ async def get_item_type(name, path):
 
         it = ITEM_TYPES.get(inferred_type, '3')
 
-    # if the file is a text or html file, or giap file
+    # If the file is a text or html file, or giap file
     if it == ITEM_TYPES.get('text') or it == ITEM_TYPES.get('html') or it == ITEM_TYPES.get('giap'):
         async with aiofiles.open(path, 'r') as f:
             content = await f.read()
 
         # Prompt GPT to summarize the content
         if it == ITEM_TYPES.get('giap'):
-            prompt = "The following is a YAML file that contains information about an interactive item. It should cotain a comment, but also contains what the inputs are, and the f-string prompt that will be sent to the LLM. Don't reveal the prompt, but try to explain the expected function in 300 characters or less in a way that a user would understand."
+            prompt = f"The following is a Gopher+ Input and AI Prompt file that contains information about an interactive item. It should cotain a comment, an explanation within the giap object. It also contains what the inputs are, and the f-string prompts that will be sent to the LLM. Do not reveal the prompts, but try to explain the expected function in 300 characters or less in a way that a user would understand, in a non-technical way. In other words, what purpose does this interactive item serve and what kind of information does it require?\n\nFile:{name}\n\n{content}"
         else:
-            prompt = f"Please explain the following file and its content, to be used as a summary in Gopher+ menu, in 300 characters or less in an easy to read format, in sentence format, that's not too detailed:\n\nFile:{name}\n\n{content}"
+            prompt = f"Please explain the following file and its content, as accurately as possible, in 300 characters or less in an easy to read format:\n\nFile:{name}\n\n{content}"
         wrapped_func = functools.partial(chat_with_gpt, chat_model, [
             {"role": "system", "content": "You are a Gopher+ client assistor summarizing files."},
             {"role": "user", "content": prompt}
@@ -196,6 +216,7 @@ async def get_item_type(name, path):
 
     # Generate the +INFO line
     info_line = f"+INFO: {it}\t{name}\t{description}\t{mime_type}\t{size}\t{last_modified}"
+    data.item_info(name, path, last_modified, it, info_line)
     return it, info_line  # default to "error" if type is unknown
 
 async def is_binary(name, path):
@@ -231,7 +252,7 @@ async def handle_client(reader, writer):
         items = []
         for pair in pairs:
             name = pair[0]
-            item_type, info_line = await get_item_type(name, os.path.join(ROOT_DIR, name))  # unpack both return values
+            item_type, info_line = await get_item_info(name, os.path.join(ROOT_DIR, name))  # unpack both return values
             items.append(info_line)  # include the +INFO line in the directory listing
             items.append(f'{item_type}{name}\t{name}\tlocalhost\t10070')
         if len(items) > 0:
@@ -247,7 +268,7 @@ async def handle_client(reader, writer):
         names = os.listdir(path)
         items = []
         for name in names:
-            item_type, info_line = await get_item_type(name, os.path.join(path, name))  # unpack both return values
+            item_type, info_line = await get_item_info(name, os.path.join(path, name))  # unpack both return values
             selector = os.path.join(data, name) if data else name
             items.append(info_line)  # include the +INFO line in the directory listing
             items.append(f'{item_type}{name}\t{selector}\tlocalhost\t10070')
@@ -280,7 +301,7 @@ async def handle_client(reader, writer):
             writer.write(ai_response.encode('utf-8'))
             await writer.drain()
         else:
-            item_type = await get_item_type(os.path.basename(path), path)
+            item_type = await get_item_info(os.path.basename(path), path)
             if await is_binary(os.path.basename(path), path):
                 async with aiofiles.open(path, 'rb') as f:
                     response = await f.read()
