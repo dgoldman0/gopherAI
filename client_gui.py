@@ -69,7 +69,7 @@ def create_multipart_message(ask_responses):
                 msg.attach(MIMEText(f'Content-Disposition: form-data; name="{var}"\r\n\r\n{choice}'))
     return msg.as_string()
 
-# Need to adjust so it can connect to different servers. 
+# Need to adjust so it can connect to different servers and also can connect through SSL.
 class GopherClient:
 
     ITEM_TYPES = {
@@ -85,6 +85,8 @@ class GopherClient:
         "?": "(INTERACTIVE)", # indicates to gopher+ that there will be a +ASK block
     }
 
+    DEFAULT_PORT = 70
+
     def __init__(self, host, port):
         self.host = host
         self.port = port
@@ -92,6 +94,13 @@ class GopherClient:
         self.location = ''
         self.menu_history = []  # stack to store menu history
         self.last_query = ['', None]  # to store last query for re-fetching pending interaction
+
+    async def set_location(self, location, host = None, port = None):
+        self.location = location
+        if host is not None:
+            self.host = host
+        if port is not None:
+            self.port = self.DEFAULT_PORT
 
     async def fetch(self, selector, query = None, download = False, wait = False):
         self.last_query = [selector, query]

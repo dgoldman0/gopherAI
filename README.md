@@ -67,4 +67,4 @@ Together, let's enhance the power of natural language interfaces, opening up new
 
 ---
 
-_This is a living document and will continue to be updated as the project evolves. For more detailed information about the system architecture, usage guidelines, and contribution guidelines, please refer to our [documentation](/link_to_docs)._
+_This is a living document and will continue to be updated as the project evolves._
