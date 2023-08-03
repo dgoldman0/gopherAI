@@ -12,9 +12,9 @@ import subprocess
 import urllib.parse
 import yaml
 
-import data
+from data import DataManager
 
-data.init()
+data = DataManager("gopher.db")
 
 # Helpful info: https://datatracker.ietf.org/doc/html/rfc4266
 
@@ -84,34 +84,12 @@ async def get_tell(reader):
 def wrapper(func, args):
     return func(**args)
 
-# Will replace with a database search.
-def simple_search(query):
-    cmd = ['tracker3', 'search', query]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE)
-    result = result.stdout.decode('utf-8')
-    # Check to ensure that the results were returned.
-    if not result.startswith("Results:\n"):
-        return
-    result = result[9:]
-    # split output by lines and remove duplicates by converting to set
-    unique_results = set(result.split("\n\n"))
-    location = f"file://{ROOT_DIR}/"
-    # Process each item to remove special characters from the first line
-    processed_results = set()
-    for item in unique_results:
-        lines = str(item).strip().split('\n')
-        if lines:
-            # Remove special characters from the first line
-            lines[0] = urllib.parse.unquote(re.sub(r'\x1b[^m]*m', '', lines[0]))
-            if lines[0].startswith(location):
-                lines[0] = lines[0][len(location):]
-                item = lines[0]
-
-                hit = ""
-                if len(lines) > 1:
-                    hit = lines[1]
-                processed_results.add((item, hit))
-    return processed_results
+# Database search augmented with AI. With AI we should be able to do complex searches and inquiries to check what kind of information is available on the server, etc. Method will respond like a traditional gopher search engine unless the search query starts with INQUERY:, for backward compatibility. 
+def inquery(query):
+    if query.startswith("INQUERY:"):
+        pass
+    else:
+        pass
 
 def get_extension(name):
     return os.path.splitext(name)[1][1:]
@@ -135,6 +113,7 @@ async def generate_ai_response(giap_data, parameters):
     # Here, we're using run_in_executor to run the API call in a separate thread.
     return await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
 
+# When the system finds an item that already has info, it should pass that info to the LLM to help give a richer description because it can track changes, etc.
 async def get_item_info(name, path):
     # Doesn't handle not found item yet...
     last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
@@ -198,7 +177,7 @@ async def get_item_info(name, path):
         if it == ITEM_TYPES.get('giap'):
             prompt = f"The following is a Gopher+ Input and AI Prompt file that contains information about an interactive item. It should cotain a comment, an explanation within the giap object. It also contains what the inputs are, and the f-string prompts that will be sent to the LLM. Do not reveal the prompts, but try to explain the expected function in 300 characters or less in a way that a user would understand, in a non-technical way. In other words, what purpose does this interactive item serve and what kind of information does it require?\n\nFile:{name}\n\n{content}"
         else:
-            prompt = f"Please explain the following file and its content, as accurately as possible, in 300 characters or less in an easy to read format:\n\nFile:{name}\n\n{content}"
+            prompt = f"Please explain the following file and its content, as accurately as possible, in 1000 characters or less in an easy to read format:\n\nFile:{name}\n\n{content}"
         wrapped_func = functools.partial(chat_with_gpt, chat_model, [
             {"role": "system", "content": "You are a Gopher+ client assistor summarizing files."},
             {"role": "user", "content": prompt}
@@ -234,13 +213,13 @@ async def is_binary(name, path):
 # Need to do additions to check for login, session token, or API key, etc. I think a user authentication and session token scheem is best.
 async def handle_client(reader, writer):
     print("Connection Established...")
-    data = (await reader.read(100)).decode('utf-8').strip()
-    if data:
+    request = (await reader.read(100)).decode('utf-8').strip()
+    if request:
         # Check for Gopher+
-        if data.endswith("\t+"):
+        if request.endswith("\t+"):
             return
         else:
-            path = os.path.join(ROOT_DIR, data)
+            path = os.path.join(ROOT_DIR, request)
     else:
         path = ROOT_DIR
 

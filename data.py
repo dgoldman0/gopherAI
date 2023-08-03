@@ -5,6 +5,11 @@ from datetime import datetime
 
 conn = None
 
+from lark import Lark, Transformer, v_args, Tree
+import sqlite3
+import re
+from datetime import datetime
+
 # Define the grammar
 grammar = """
     start: or_test
@@ -14,7 +19,7 @@ grammar = """
     comparison: column ("=" | "!=" | ">" | ">=" | "<" | "<=" | "LIKE") value
     column: "name" | "path" | "last_modified" | "item_type" | "info"
     value: ESCAPED_STRING | SIGNED_INT | DATETIME
-    DATETIME: /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/
+    DATETIME: /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/
     %import common.ESCAPED_STRING
     %import common.SIGNED_INT
     %import common.WS
@@ -37,10 +42,10 @@ class QueryTransformer(Transformer):
             # Validate datetime format
             datetime_value = value.children[0]
             try:
-                datetime.strptime(datetime_value, '%Y-%m-%d %H:%M:%S')  # Check if the datetime string matches the format
+                datetime.strptime(datetime_value, '%Y-%m-%dT%H:%M:%SZ')  # Check if the datetime string matches the format
                 return datetime_value
             except ValueError:
-                raise ValueError(f"Invalid datetime format: {datetime_value}, expected format: YYYY-MM-DD HH:MM:SS")
+                raise ValueError(f"Invalid datetime format: {datetime_value}, expected format: YYYY-MM-DDTHH:MM:SSZ")
         else:
             return value
 
@@ -66,7 +71,7 @@ class QueryTransformer(Transformer):
             return True
         elif column_type == 'INTEGER' and isinstance(value, int):
             return True
-        elif column_type == 'DATETIME' and re.fullmatch(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', value):  # Check if value matches datetime pattern
+        elif column_type == 'DATETIME' and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):  # Check if value matches datetime pattern
             return True
         else:
             return False
@@ -89,9 +94,19 @@ class QueryTransformer(Transformer):
 # Create the parser
 parser = Lark(grammar, parser='lalr', transformer=QueryTransformer())
 
-class DatabaseSearcher:
-    def __init__(self, conn):
-        self.conn = conn
+class DataManager:
+    conn = None
+    def __init__(self, db):
+        # Initialize the database.
+        print("Initializing database...")
+        self.conn = sqlite3.connect(db)  # You can replace 'my_database.db' with your preferred database name.
+        c = self.conn.cursor()
+        c.execute('''
+                CREATE TABLE IF NOT EXISTS items
+                (name TEXT, path TEXT, last_modified TEXT, item_type INTEGER, info TEXT,
+                PRIMARY KEY(name, path))
+                ''')
+        self.conn.commit()
 
     def search(self, query):
         # Parse the query
@@ -111,49 +126,33 @@ class DatabaseSearcher:
 
         return rows
     
-# Initialize the database.
-def init():
-    global conn
-    print("Initializing database...")
-    conn = sqlite3.connect('gopher.db')  # You can replace 'my_database.db' with your preferred database name.
-    c = conn.cursor()
-    c.execute('''
-              CREATE TABLE IF NOT EXISTS items
-              (name TEXT, path TEXT, last_modified TEXT, item_type INTEGER, info TEXT,
-               PRIMARY KEY(name, path))
-              ''')
-    conn.commit()
-
-# Return None if no entry found.
-def last_modified(name, path):
-    global conn
-    c = conn.cursor()
-    c.execute("SELECT last_modified FROM items WHERE name=? AND path=?", (name, path))
-    result = c.fetchone()
-    if result is None:
-        return None
-    else:
-        return result[0]
-
-# Get the item info or None associated with name and path, if last_modified is None, else set the entry.
-def item_info(name, path, last_modified=None, item_type=None, info=None):
-    global conn
-    c = conn.cursor()
-    
-    if last_modified is None:
-        c.execute("SELECT info FROM items WHERE name=? AND path=?", (name, path))
+    # Return None if no entry found.
+    def last_modified(self, name, path):
+        global conn
+        c = self.conn.cursor()
+        c.execute("SELECT last_modified FROM items WHERE name=? AND path=?", (name, path))
         result = c.fetchone()
-        conn.close()
         if result is None:
             return None
         else:
             return result[0]
-    else:
-        print(f"Adding new entry for {path}...\n==============\n{info}")
-        c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, info) VALUES (?, ?, ?, ?, ?)", 
-                  (name, path, last_modified, item_type, info))
-        conn.commit()
 
-def close():
-    global conn
-    conn.close()
+    # Get the item info or None associated with name and path, if last_modified is None, else set the entry.
+    def item_info(self, name, path, last_modified=None, item_type=None, info=None):
+        c = self.conn.cursor()
+        
+        if last_modified is None:
+            c.execute("SELECT info FROM items WHERE name=? AND path=?", (name, path))
+            result = c.fetchone()
+            if result is None:
+                return None
+            else:
+                return result[0]
+        else:
+            print(f"Adding new entry for {path}...\n==============\n{info}")
+            c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, info) VALUES (?, ?, ?, ?, ?)", 
+                    (name, path, last_modified, item_type, info))
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
