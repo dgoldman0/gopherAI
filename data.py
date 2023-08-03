@@ -1,7 +1,116 @@
+from lark import Lark, Transformer, v_args, Tree
 import sqlite3
+import re
+from datetime import datetime
 
 conn = None
 
+# Define the grammar
+grammar = """
+    start: or_test
+    or_test: and_test ("OR" and_test)*
+    and_test: not_test ("AND" not_test)*
+    not_test: "NOT" not_test | comparison
+    comparison: column ("=" | "!=" | ">" | ">=" | "<" | "<=" | "LIKE") value
+    column: "name" | "path" | "last_modified" | "item_type" | "info"
+    value: ESCAPED_STRING | SIGNED_INT | DATETIME
+    DATETIME: /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/
+    %import common.ESCAPED_STRING
+    %import common.SIGNED_INT
+    %import common.WS
+    %ignore WS
+"""
+
+# Define the transformer
+@v_args(inline=True)
+class QueryTransformer(Transformer):
+    def column(self, name):
+        return name[0]
+
+    def value(self, value):
+        value = value[0]
+        if isinstance(value, Tree) and value.data == 'SIGNED_INT':
+            return int(value.children[0])
+        elif isinstance(value, Tree) and value.data == 'ESCAPED_STRING':
+            return re.sub(r'\W+', '', value.children[0][1:-1])  # Remove quotes and sanitize string
+        elif isinstance(value, Tree) and value.data == 'DATETIME':
+            # Validate datetime format
+            datetime_value = value.children[0]
+            try:
+                datetime.strptime(datetime_value, '%Y-%m-%d %H:%M:%S')  # Check if the datetime string matches the format
+                return datetime_value
+            except ValueError:
+                raise ValueError(f"Invalid datetime format: {datetime_value}, expected format: YYYY-MM-DD HH:MM:SS")
+        else:
+            return value
+
+    def comparison(self, items):
+        column, operator, value = items
+        column_type = self.get_column_type(column)
+        if not self.is_valid_type(column_type, value):
+            raise ValueError(f"Invalid value '{value}' for column '{column}' of type '{column_type}'")
+        return f"{column} {operator} '{value}'"
+
+    def get_column_type(self, column):
+        column_types = {
+            'name': 'TEXT',
+            'path': 'TEXT',
+            'last_modified': 'DATETIME',
+            'item_type': 'INTEGER',
+            'info': 'TEXT'
+        }
+        return column_types[column]
+
+    def is_valid_type(self, column_type, value):
+        if column_type == 'TEXT' and isinstance(value, str):
+            return True
+        elif column_type == 'INTEGER' and isinstance(value, int):
+            return True
+        elif column_type == 'DATETIME' and re.fullmatch(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', value):  # Check if value matches datetime pattern
+            return True
+        else:
+            return False
+
+    def not_test(self, items):
+        if len(items) == 1:
+            return items[0]
+        else:
+            return f"NOT {items[1]}"
+
+    def and_test(self, items):
+        return f" AND ".join(items)
+
+    def or_test(self, items):
+        return f" OR ".join(items)
+
+    def start(self, items):
+        return items[0]
+
+# Create the parser
+parser = Lark(grammar, parser='lalr', transformer=QueryTransformer())
+
+class DatabaseSearcher:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def search(self, query):
+        # Parse the query
+        sql_where_clause = parser.parse(query)
+
+        # Prepare the SQL query
+        sql_query = f"""
+            SELECT *
+            FROM items
+            WHERE {sql_where_clause}
+        """
+
+        # Execute the query and fetch the results
+        cursor = self.conn.cursor()
+        cursor.execute(sql_query)
+        rows = cursor.fetchall()
+
+        return rows
+    
 # Initialize the database.
 def init():
     global conn
