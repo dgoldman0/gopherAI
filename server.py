@@ -84,21 +84,67 @@ async def get_tell(reader):
 def wrapper(func, args):
     return func(**args)
 
-# Database search augmented with AI. With AI we should be able to do complex searches and inquiries to check what kind of information is available on the server, etc. Method will respond like a traditional gopher search engine unless the search query starts with INQUERY:, for backward compatibility. 
-def inquery(query):
-    if query.startswith("INQUERY:"):
-        pass
-    else:
-        pass
-
-def get_extension(name):
-    return os.path.splitext(name)[1][1:]
-
 def chat_with_gpt(model, messages):
     response = openai.ChatCompletion.create(model=model, messages=messages)
     return response['choices'][0]['message']['content'].strip()
 
-# Needto chnage to get the system prompt and the set of user prompts
+# Database search augmented with AI. With AI we should be able to do complex searches and inquiries to check what kind of information is available on the server, etc. Method will respond like a traditional gopher search engine unless the search query starts with INQUIRY:, for backward compatibility. 
+# Need to inform the AI of the full modifications to the Gopher menu system including additional item types.
+async def inquiry(query):
+    if query.startswith("INQUIRY:"):
+        query = query[8:]
+        information = ""
+        # Gather additional information as necessary. Might be useful to be able to add the ability to grab actual file contents. Also, might be useful to cache information to speed up the process. 
+        while True:
+            # Check if additional info is needed.
+            wrapped_func = functools.partial(chat_with_gpt, chat_model, [
+                {"role": "system", "content": "You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. The results will be in the form of a Gopher+ menu. Determine whether you need to perform a search query to answer the following inquiry."},
+                {"role": "user", "content": query},
+                {"role": "system", "content": f"The following information is already available:\n{information}"},
+                {"role": "user", "content": "Would a database search yield additional important information? Answer yes or no only, using lowercase with nothing else."}
+            ])
+            grab_additional = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
+            if grab_additional.lower() != "yes":
+                break
+
+            # Grab additional info.
+            wrapped_func = functools.partial(chat_with_gpt, chat_model, [
+                {"role": "system", "content": "You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. The results will be in the form of a Gopher+ menu. You have decided that additional information is needed to respond to the following query."},
+                {"role": "user", "content": query},
+                {"role": "system", "content": f"The following information is already available:\n{information}"},
+                {"role": "system", "content": "The database has the following columns: name (text), path (text), last_modified (datetime in the format YYYY-MM-DDTHH:MM:SSZ), item_type (integer), and info (text). The user can search these columns using comparison operators (=, !=, >, >=, <, <=, LIKE), logical operators (AND, OR, NOT), and parentheses for grouping conditions."},
+                {"role": "user", "content": "Based on the information already available, the inquiry, and the available search options, generate a valid search query that would help gather necessary information to answer the inquiry."}
+            ])
+            internal_query = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
+            results = data.search(internal_query)
+            information = f"Query: {internal_query}\n============{results}"
+            # Create any necessary annotations. 
+            wrapped_func = functools.partial(chat_with_gpt, chat_model, [
+                {"role": "system", "content": "You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. The results will be in the form of a Gopher+ menu. You have decided that additional information is needed to respond to the following query."},
+                {"role": "user", "content": query},
+                {"role": "system", "content": f"The following information is already available:\n{information}"},
+                {"role": "user", "content": "Please add any useful annotations at this point."}
+            ])
+            annotation = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
+            information = f"\n---------Annotation: {annotation}\n\n"
+
+        # Answer the inquiry. Should put into a loop that double checks that the format is correct. 
+        host, port = data.host_port()
+        # +N will be used for a natural language line.
+        wrapped_func = functools.partial(chat_with_gpt, chat_model, [
+            {"role": "system", "content": f"You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. Your local gopher server host is {host} with port {port}. The following information is available:\n{information}"},
+            {"role": "system", "content": "Respond to the user's query, based on the information that you have. The response should follow the Gopher Menu format. However, in addition to the basic options, menu options can start with +N indicating a natural language response. These lines can be used to give natural language information related to the inquiry, for instance, if the system was asked whether or not the server has information on a specific topic, the +N line can be used to indicate that it does or does not. If it does, some items found that fit may follow, again using the standard Gopher Menu format:"},
+            {"role": "user", "content": query},
+        ])
+        inquiry_result = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
+        return inquiry_result
+    else:
+        return data.search(query)
+
+def get_extension(name):
+    return os.path.splitext(name)[1][1:]
+
+# Needto change to get the system prompt and the set of user prompts
 async def generate_ai_response(giap_data, parameters):
     system = giap_data['ai_call']['system']
     template = giap_data['ai_call']['prompt']
@@ -113,7 +159,6 @@ async def generate_ai_response(giap_data, parameters):
     # Here, we're using run_in_executor to run the API call in a separate thread.
     return await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
 
-# When the system finds an item that already has info, it should pass that info to the LLM to help give a richer description because it can track changes, etc.
 async def get_item_info(name, path):
     # Doesn't handle not found item yet...
     last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
@@ -152,6 +197,7 @@ async def get_item_info(name, path):
 
     # Check if basic known extensions, including giap
     if extension == "giap":
+        mime_type = "text/plain"
         it = ITEM_TYPES.get('giap')
     else:
         # Explicitly mention the possible item types in the prompt
@@ -190,7 +236,7 @@ async def get_item_info(name, path):
     else:
         description = name  # Use the file name as the description for other file types
 
-    # Generate the +INFO line
+    # Generate the +INFO line: really should split this up for the database, and then reconstruct as needed.
     info_line = f"+INFO: {it}\t{name}\t{description}\t{mime_type}\t{size}\t{last_modified}"
     data.item_info(name, path, last_modified, it, info_line)
     return it, info_line  # default to "error" if type is unknown
@@ -224,17 +270,8 @@ async def handle_client(reader, writer):
         path = ROOT_DIR
 
     if path.startswith('/search\t'):
-        pairs = simple_search(path[8:])
-        items = []
-        for pair in pairs:
-            name = pair[0]
-            item_type, info_line = await get_item_info(name, os.path.join(ROOT_DIR, name))  # unpack both return values
-            items.append(info_line)  # include the +INFO line in the directory listing
-            items.append(f'{item_type}{name}\t{name}\tlocalhost\t10070')
-        if len(items) > 0:
-            response = '\r\n'.join(items) + '\r\n.'
-        else:
-            response = "."
+        # I need to decide whether to go with the search results info or double check the last modified date. 
+        response = (await inquiry(path[8:])) + "\r\n."
 
         writer.write(response.encode('utf-8'))
     elif not os.path.abspath(path).startswith(ROOT_DIR):
@@ -302,4 +339,5 @@ async def start_server(host, port):
     async with server:
         await server.serve_forever()
 
-asyncio.run(start_server('localhost', 10070))
+host, port = data.host_port()
+asyncio.run(start_server(host, port))

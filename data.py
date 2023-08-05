@@ -10,6 +10,8 @@ import sqlite3
 import re
 from datetime import datetime
 
+# I want to add more data that could be useful for search, such as some kind of extra tag system. Searches should be rich.
+
 # Define the grammar
 grammar = """
     start: or_test
@@ -61,7 +63,7 @@ class QueryTransformer(Transformer):
             'name': 'TEXT',
             'path': 'TEXT',
             'last_modified': 'DATETIME',
-            'item_type': 'INTEGER',
+            'item_type': 'TEXT',
             'info': 'TEXT'
         }
         return column_types[column]
@@ -94,6 +96,7 @@ class QueryTransformer(Transformer):
 # Create the parser
 parser = Lark(grammar, parser='lalr', transformer=QueryTransformer())
 
+# Things like server URL and port should be in here as well.
 class DataManager:
     conn = None
     def __init__(self, db):
@@ -103,18 +106,34 @@ class DataManager:
         c = self.conn.cursor()
         c.execute('''
                 CREATE TABLE IF NOT EXISTS items
-                (name TEXT, path TEXT, last_modified TEXT, item_type INTEGER, info TEXT,
+                (name TEXT, path TEXT, last_modified TEXT, item_type TEXT, info TEXT,
                 PRIMARY KEY(name, path))
                 ''')
+        c.execute('''
+                CREATE TABLE IF NOT EXISTS settings
+                (host TEXT, port INTEGER, PRIMARY KEY(host, port))
+                ''')
+        # If there isn't any settings info yet, add it with host as localhost and port as 10070
+        c.execute("INSERT INTO settings (host, port) SELECT 'localhost', 10070 WHERE NOT EXISTS(SELECT 1 FROM settings)")
         self.conn.commit()
 
+    def host_port(self):
+        # Returns host and port from the settings table
+        c = self.conn.cursor()
+        c.execute("SELECT host, port FROM settings LIMIT 1")
+        data = c.fetchone()
+        if data is not None:
+            return data
+        else:
+            return None
+        
     def search(self, query):
         # Parse the query
         sql_where_clause = parser.parse(query)
 
         # Prepare the SQL query
         sql_query = f"""
-            SELECT *
+            SELECT item_type, info
             FROM items
             WHERE {sql_where_clause}
         """
@@ -123,6 +142,9 @@ class DataManager:
         cursor = self.conn.cursor()
         cursor.execute(sql_query)
         rows = cursor.fetchall()
+
+        # Revise to send as a string in Gopher menu format.
+        host, port = self.host_port()
 
         return rows
     

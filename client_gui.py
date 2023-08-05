@@ -95,14 +95,16 @@ class GopherClient:
         self.menu_history = []  # stack to store menu history
         self.last_query = ['', None]  # to store last query for re-fetching pending interaction
 
-    async def set_location(self, location, host = None, port = None):
+    async def set_location(self, location, auto_fetch = True, host = None, port = None):
         self.location = location
         if host is not None:
             self.host = host
         if port is not None:
             self.port = self.DEFAULT_PORT
+        if auto_fetch:
+            self.fetch(self.location)
 
-    async def fetch(self, selector, query = None, download = False, wait = False):
+    async def fetch(self, selector, query = None, download = False, save = True, wait = False):
         self.last_query = [selector, query]
         reader, writer = await asyncio.open_connection(self.host, self.port)
         if query is not None:
@@ -157,22 +159,33 @@ class GopherClient:
             await writer.drain()
 
         temp_menu = []  # temporary menu to store fetched items
-
+        
+        data = None
         if download:
             print(type)
             filename = selector.split('/')[-1:][0]
 
-            async with aiofiles.open(filename, 'wb') as fd:
+            # I don't think this is set up correctly. Might only work with text files. 
+            if save:
+                async with aiofiles.open(filename, 'wb') as fd:
+                    while True:
+                        line = await reader.readline()
+                        if not line or line == b'.':
+                            break
+                        data += line + "\n"
+                        await fd.write(line)
+
+                if (os.name == 'nt'):  # For Windows
+                    os.startfile(filename)
+                elif (os.name == 'posix'):  # For Unix or Linux
+                    subprocess.call(('xdg-open', filename))
+            else:
                 while True:
                     line = await reader.readline()
                     if not line or line == b'.':
                         break
-                    await fd.write(line)
+                    data += line + "\n"
 
-            if (os.name == 'nt'):  # For Windows
-                os.startfile(filename)
-            elif (os.name == 'posix'):  # For Unix or Linux
-                subprocess.call(('xdg-open', filename))
         else:
             if not query and selector != '':
                 self.location += selector + '/'
@@ -180,6 +193,7 @@ class GopherClient:
             item_info = None
             while True:
                 line = await reader.readline()
+                data += line = "\n"
                 if not line or line == b'.':
                     break
                 line = line.decode('utf-8').rstrip()
@@ -200,6 +214,8 @@ class GopherClient:
             if len(self.menu_history) > 1:
                 self.back_button.config(state=tk.NORMAL)  # enable back button
         await writer.wait_closed()
+
+        return data
 
     def start(self):
 #        asyncio.run(gc.fetch(''))
@@ -343,6 +359,7 @@ class GopherClient:
                     break
                 else:
                     result = "Error. Unknown command"
+                    # I need to add a way to have it choose whether to download or not.
                     if command == "fetch":
                         asyncio.run(gc.fetch(parameters))
                         # I need to tell the AI what each entry is. 
