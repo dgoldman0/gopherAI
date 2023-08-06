@@ -193,7 +193,7 @@ class GopherClient:
             item_info = None
             while True:
                 line = await reader.readline()
-                data += line = "\n"
+                data += line + "\n"
                 if not line or line == b'.':
                     break
                 line = line.decode('utf-8').rstrip()
