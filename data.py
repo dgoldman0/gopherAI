@@ -106,7 +106,7 @@ class DataManager:
         c = self.conn.cursor()
         c.execute('''
                 CREATE TABLE IF NOT EXISTS items
-                (name TEXT, path TEXT, last_modified TEXT, item_type TEXT, info TEXT,
+                (name TEXT, path TEXT, last_modified TEXT, item_type TEXT, description TEXT, mime_type TEXT, size INTEGER,
                 PRIMARY KEY(name, path))
                 ''')
         c.execute('''
@@ -133,7 +133,7 @@ class DataManager:
 
         # Prepare the SQL query
         sql_query = f"""
-            SELECT item_type, info
+            SELECT *
             FROM items
             WHERE {sql_where_clause}
         """
@@ -160,20 +160,21 @@ class DataManager:
             return result[0]
 
     # Get the item info or None associated with name and path, if last_modified is None, else set the entry.
-    def item_info(self, name, path, last_modified=None, item_type=None, info=None):
+    def item_info(self, name, path, last_modified=None, item_type=None, description=None, mime_type=None, size=None):
         c = self.conn.cursor()
-        
+
         if last_modified is None:
-            c.execute("SELECT info FROM items WHERE name=? AND path=?", (name, path))
+            c.execute("SELECT item_type, name, description, mime_type, size, last_modified FROM items WHERE name=? AND path=?", (name, path))
             result = c.fetchone()
             if result is None:
                 return None
             else:
-                return result[0]
+                info_line = f"+INFO: {result[0]}\t{name}\t{result[2]}\t{result[3]}\t{result[4]}\t{result[5]}"
+                return info_line
         else:
-            print(f"Adding new entry for {path}...\n==============\n{info}")
-            c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, info) VALUES (?, ?, ?, ?, ?)", 
-                    (name, path, last_modified, item_type, info))
+            print(f"Adding new entry for {path}...\n==============\n+INFO: {item_type}\t{name}\t{description}\t{mime_type}\t{size}\t{last_modified}")
+            c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, description, mime_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                    (name, path, last_modified, item_type, description, mime_type, size))
         self.conn.commit()
 
     def close(self):

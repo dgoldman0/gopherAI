@@ -130,10 +130,12 @@ async def inquiry(query):
 
         # Answer the inquiry. Should put into a loop that double checks that the format is correct. 
         host, port = data.host_port()
+        # This definitely is not going to work correctly at first. 
         # +N will be used for a natural language line.
         wrapped_func = functools.partial(chat_with_gpt, chat_model, [
             {"role": "system", "content": f"You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. Your local gopher server host is {host} with port {port}. The following information is available:\n{information}"},
-            {"role": "system", "content": "Respond to the user's query, based on the information that you have. The response should follow the Gopher Menu format. However, in addition to the basic options, menu options can start with +N indicating a natural language response. These lines can be used to give natural language information related to the inquiry, for instance, if the system was asked whether or not the server has information on a specific topic, the +N line can be used to indicate that it does or does not. If it does, some items found that fit may follow, again using the standard Gopher Menu format:"},
+            {"role": "system", "content": "The format used for this server is an extended Gopher+ format. Info lines come right before their respective item lines and are of format +INFO: {item_type}\t{name}\t{description}\t{mime_type}\t{size}\t{last_modified}"},
+            {"role": "system", "content": "Respond to the user's query, based on the information that you have. The response should follow the Gopher Menu format. However, in addition to the basic options, menu options can start with +N indicating a natural language response. These lines can be used to give natural language information related to the inquiry, for instance, if the system was asked whether or not the server has information on a specific topic, the +N line can be used to indicate that it does or does not. If it does, some items found that fit may follow, again using the modified Gopher Menu format:"},
             {"role": "user", "content": query},
         ])
         inquiry_result = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
@@ -183,8 +185,9 @@ async def get_item_info(name, path):
         # Note: the OpenAI API call is not thread-safe and might block the event loop.
         # Here, we're using run_in_executor to run the API call in a separate thread.
         description = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
-        info_line = f"+INFO: {ITEM_TYPES.get('directory')}\t{name}\t{description}\tapplication/gopher-menu\t-1\t{last_modified}"
-        data.item_info(name, path, last_modified, ITEM_TYPES.get('directory'), info_line)
+
+        # Not sure if I should have a size for the directory or not. Maybe it should track how many items are in the directory? But I think Gopher uses size 0 for directory listings.
+        data.item_info(name, path, last_modified, ITEM_TYPES.get('directory'), description, 'application/gopher-menu', 0)
         return ITEM_TYPES.get('directory'), info_line
 
     extension = get_extension(name)
@@ -236,10 +239,9 @@ async def get_item_info(name, path):
     else:
         description = name  # Use the file name as the description for other file types
 
-    # Generate the +INFO line: really should split this up for the database, and then reconstruct as needed.
-    info_line = f"+INFO: {it}\t{name}\t{description}\t{mime_type}\t{size}\t{last_modified}"
-    data.item_info(name, path, last_modified, it, info_line)
-    return it, info_line  # default to "error" if type is unknown
+    data.item_info(name, path, last_modified, it, description, mime_type, size)
+    return it, f'+INFO: {it}\t{path}\t{description}\t{mime_type}\t{size}\t{last_modified}'
+    # Will have to default to error otherwise...
 
 async def is_binary(name, path):
     extension = get_extension(name)
@@ -259,6 +261,7 @@ async def is_binary(name, path):
 # Need to do additions to check for login, session token, or API key, etc. I think a user authentication and session token scheem is best.
 async def handle_client(reader, writer):
     print("Connection Established...")
+    host, port = data.host_port()
     request = (await reader.read(100)).decode('utf-8').strip()
     if request:
         # Check for Gopher+
@@ -282,15 +285,19 @@ async def handle_client(reader, writer):
         items = []
         for name in names:
             item_type, info_line = await get_item_info(name, os.path.join(path, name))  # unpack both return values
+
+            # Generate info life from info...
+            # info_line = ...
+
             selector = os.path.join(data, name) if data else name
             items.append(info_line)  # include the +INFO line in the directory listing
-            items.append(f'{item_type}{name}\t{selector}\tlocalhost\t10070')
+            items.append(f'{item_type}{name}\t{selector}\t{host}\t{port}')
         if path == ROOT_DIR:
             timestamp = os.path.getmtime(path)
             dt = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
             dt = dt.split('.')[0] + 'Z'
             items.append(f'+INFO: 7\t/search\tSimple Search\tapplication/gopher-menu\t-1\t{dt}')
-            items.append('7Search\t/search\tlocalhost\t10070')
+            items.append('7Search\t/search\t{host}\t{port}')
         response = '\r\n'.join(items) + '\r\n.'
         writer.write(response.encode('utf-8'))
     elif os.path.isfile(path):
