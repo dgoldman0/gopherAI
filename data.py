@@ -170,9 +170,8 @@ class DataManager:
                 return None
             else:
                 info_line = f"+INFO: {result[0]}\t{name}\t{result[2]}\t{result[3]}\t{result[4]}\t{result[5]}"
-                return info_line
+                return result[0], info_line
         else:
-            print(f"Adding new entry for {path}...\n==============\n+INFO: {item_type}\t{name}\t{description}\t{mime_type}\t{size}\t{last_modified}")
             c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, description, mime_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)", 
                     (name, path, last_modified, item_type, description, mime_type, size))
         self.conn.commit()

@@ -16,6 +16,8 @@ from email import encoders
 import mimetypes
 import openai
 
+from ttkthemes import ThemedTk
+
 import time
 from datetime import datetime, timezone
 
@@ -24,7 +26,7 @@ chat_model = 'gpt-4'
 def chat_with_gpt(model, messages):
     response = openai.ChatCompletion.create(model=model, messages=messages)
     return response['choices'][0]['message']['content'].strip()
-
+        
 def generate_tell(ask_responses):
     tell_string = "+TELL\n"
     for var, data in ask_responses.items():
@@ -105,6 +107,7 @@ class GopherClient:
             self.fetch(self.location)
 
     async def fetch(self, selector, query = None, download = False, save = True, wait = False):
+        print(f"Fetching {selector}...")
         self.last_query = [selector, query]
         reader, writer = await asyncio.open_connection(self.host, self.port)
         if query is not None:
@@ -165,7 +168,7 @@ class GopherClient:
             print(type)
             filename = selector.split('/')[-1:][0]
 
-            # I don't think this is set up correctly. Might only work with text files. 
+            # I don't think this is set up correctly. Might only work with text files. Yeah this definitely does not work with binary files. 
             if save:
                 async with aiofiles.open(filename, 'wb') as fd:
                     while True:
@@ -191,12 +194,13 @@ class GopherClient:
                 self.location += selector + '/'
 
             item_info = None
+            data = ""
             while True:
                 line = await reader.readline()
-                data += line + "\n"
                 if not line or line == b'.':
                     break
                 line = line.decode('utf-8').rstrip()
+                data += line + "\n"
                 if line.startswith('+INFO: '):
                     item_info = line[7:].split('\t')
                 else:
@@ -219,7 +223,7 @@ class GopherClient:
 
     def start(self):
 #        asyncio.run(gc.fetch(''))
-        root = tk.Tk()
+        root = ThemedTk(theme="yaru")
         root.title("Gopher+ Client")
         style = ttk.Style()
         style.configure("Treeview", rowheight=30) # increase row height
@@ -301,6 +305,11 @@ class GopherClient:
             if len(self.menu_history) <= 1:
                 self.back_button.config(state=tk.DISABLED)  # disable the back button if we are at the start
 
+    def link_click(self, event):
+        clicked_item = self.chat_box.tk.call(self.chat_box._w, "href", event.x, event.y)
+        if clicked_item:
+            print(f"Clicked on link: {clicked_item}")
+
     def chat_window(self):
         if not hasattr(self, 'chat_history'):
             self.chat_history = []  # store chat history as list of tuples (source, text)
@@ -310,6 +319,7 @@ class GopherClient:
 
         # Create HTMLLabel widget to display chat history
         self.chat_box = HTMLLabel(chat_root, html="")
+        self.chat_box.tag_bind("a", "<Button-1>", self.link_click)
         self.chat_box.pack(fill=tk.BOTH, expand=True)
 
         input_frame = tk.Frame(chat_root)
@@ -337,7 +347,8 @@ class GopherClient:
 
             # Check if we need to gather additional information. 
             while True:
-                system_message = {"role": "system", "content": f"You are a helpful assistant. Before you can repsond to the user, you must double check to make sure you don't need to perform any internal commands. You can perform a number of operations, or just answer questions in general. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nDo you need to perform any additional functions before answering responding to the user? Here are the following options:\n- fetch [path, without leading /, so just fetch if you're fetching root]: fetches an item from the current gopher server.\n- none (by itself): specifies that there's no need for additional information and to continue to the response stage.\n Please select a command to execute or none. Your response must start with a valid command."}
+                # I need the instructions very specific, but maybe I can break it up into multiple system prompts, and maybe tack on temporary system prompts saying when the system misbehaves.
+                system_message = {"role": "system", "content": f"You are a helpful assistant. This is the data collection phase. Before you can repsond to the user, you must double check to make sure you don't need to perform any internal commands. You can perform a number of operations, or just answer questions in general. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nDo you need to perform any additional functions before answering responding to the user? Here are the following options:\n- fetch [path, without leading /, so just fetch if you're fetching root]: fetches an item from the current gopher server.\n- hop [host] [port] - hop to a different Gopher server\n- none (by itself): specifies that there's no need for additional information and to continue to the response stage.\n Please select a command to execute or none. Your response must start with a valid command. You will have a chance to write a full response after your data collection has been completed by selecting **none**. "}
                 messages = [{"role": role.lower(), "content": content} for role, content in self.chat_history]
                 messages.insert(0, system_message)            
 
@@ -358,19 +369,23 @@ class GopherClient:
                 if command == "none":
                     break
                 else:
-                    result = "Error. Unknown command"
+                    result = None
                     # I need to add a way to have it choose whether to download or not.
                     if command == "fetch":
+                        # The system doesn't really know what kind of data it's getting for a fetch, so I should tack on an explanation or something, or convert to an easier to understand format.
                         asyncio.run(gc.fetch(parameters))
-                        # I need to tell the AI what each entry is. 
-                        result = ""
+                        # Tell the AI what each entry is. 
+                        result = "Item Type | Filename | Selector | Host | Port | Item Type (again) | Short Description | Description | Mime Type | Size | Last Modified\n"
                         for item in self.menu:
                             print(item)
                             result += ' | '.join(item) + '\n'
-
-                    self.chat_history.append(('System', f"System command executed... {response}\nResult:\n{result}"))
-
-            system_message = {"role": "system", "content": f"You are a helpful assistant. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nRespond to the most recent user prompt. Be polite, and semi formal, but not obnoxious or stuck up."}
+                    if result is not None:
+                        self.chat_history.append(('System', f"System command executed... {response}\nResult:\n{result}"))
+                    else:
+                        # Unknown command must have been interested. Ignored. 
+                        pass
+            # Would really be great to bring back my personality profile system from SAM. 
+            system_message = {"role": "system", "content": f"You are a helpful assistant. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nRespond to the most recent user prompt. Be polite, and semi formal, but not obnoxious or stuck up. Use full markdown."}
             messages = [{"role": role.lower(), "content": content} for role, content in self.chat_history]
             messages.insert(0, system_message)            
             response = chat_with_gpt(chat_model, messages)

@@ -161,6 +161,7 @@ async def generate_ai_response(giap_data, parameters):
     # Here, we're using run_in_executor to run the API call in a separate thread.
     return await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
 
+# Seems to be hanging somewhere pretty early on. 
 async def get_item_info(name, path):
     # Doesn't handle not found item yet...
     last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
@@ -285,20 +286,20 @@ async def handle_client(reader, writer):
         items = []
         for name in names:
             item_type, info_line = await get_item_info(name, os.path.join(path, name))  # unpack both return values
-
-            # Generate info life from info...
-            # info_line = ...
-
-            selector = os.path.join(data, name) if data else name
+            # I don't remember what this part does...
+#            selector = os.path.join(data, name) if data else name
             items.append(info_line)  # include the +INFO line in the directory listing
-            items.append(f'{item_type}{name}\t{selector}\t{host}\t{port}')
+            items.append(f'{item_type}{name}\t{name}\t{host}\t{port}')
+        # Tack on search in root directory listing.
         if path == ROOT_DIR:
             timestamp = os.path.getmtime(path)
             dt = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
             dt = dt.split('.')[0] + 'Z'
             items.append(f'+INFO: 7\t/search\tSimple Search\tapplication/gopher-menu\t-1\t{dt}')
-            items.append('7Search\t/search\t{host}\t{port}')
+            items.append(f'7Search\t/search\t{host}\t{port}')
+
         response = '\r\n'.join(items) + '\r\n.'
+        print(response)
         writer.write(response.encode('utf-8'))
     elif os.path.isfile(path):
         extension = get_extension(path)
@@ -335,6 +336,7 @@ async def handle_client(reader, writer):
         writer.write(response.encode('utf-8'))
 
     await writer.drain()
+    print("Connection Closed...")
     writer.close()
 
 async def start_server(host, port):
