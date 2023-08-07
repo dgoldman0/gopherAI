@@ -203,12 +203,7 @@ class GopherClient:
                 line = line.decode('utf-8').rstrip()
                 data += line + "\n"
 
-                parts = line.split('\t')
-                item = parts # Need to change
-                if item_info is not None:
-                    item.extend(item_info)
-                item_info = None
-                temp_menu.append(item)
+                temp_menu.append(line.split('\t'))
 
         writer.close()
         if len(temp_menu) > 0:  # if the fetched menu is not empty
@@ -239,7 +234,7 @@ class GopherClient:
         tree.config(yscrollcommand=scrollbar.set)
         scrollbar.config(command=tree.yview)
 
-        tree["columns"]=("Filetype", "Filename", "Size", "Timestamp", "Description")
+        tree["columns"]=("Type", "Name", "Description", "Size", "Timestamp")
         tree.column("#0", width=0, stretch=tk.NO)
         tree.heading("#0", text='', anchor=tk.W)
 
@@ -289,12 +284,19 @@ class GopherClient:
         for i in self.tree.get_children():
             self.tree.delete(i)
         for item in self.menu:
-            filetype = self.ITEM_TYPES.get(item[0], "(UNKNOWN)")
-            filename = item[1]
-            description = item[2]
-            size = item[9] if item[9] != "-1" else ""
-            timestamp = item[10] if item[10] else ""
-            self.tree.insert('', 'end', values=(filetype, filename, size, timestamp, description))
+            # f'{it}{(short_description)}\t{path}\t{host}\t{port}\t+DESCRIPTION:{quote(description)}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}'
+            filetype = self.ITEM_TYPES.get(item[0][0], "(UNKNOWN)")
+            filename = unquote(item[0][1:])
+            path = item[1]
+            port = item[2]
+            host = item[3]
+            # Eventually order shouldn't be guaranteed and it should look through the + infos individually to find what's needed. 
+            description = unquote(item[4][13:])
+            mime = item[5][6:]
+            size = item[6][6:]
+            modified = item[7][10:]
+
+            self.tree.insert('', 'end', values=(filetype, filename, description, size, modified))
 
     def go_back(self):
         if len(self.menu_history) > 1:  # ensure that we have a history to go back to
@@ -382,9 +384,8 @@ class GopherClient:
                         # The system doesn't really know what kind of data it's getting for a fetch, so I should tack on an explanation or something, or convert to an easier to understand format.
                         asyncio.run(gc.fetch(parameters))
                         # Tell the AI what each entry is. 
-                        result = "Item Type | Filename | Selector | Host | Port | Item Type (again) | Short Description | Description | Mime Type | Size | Last Modified\n"
+                        result = "Item TypeItem Name | Selector | Host | Port | Description | Mime Type | Size | Last Modified\n"
                         for item in self.menu:
-                            print(item)
                             result += ' | '.join(item) + '\n'
                     elif command == "hop":
                         pass
@@ -394,9 +395,8 @@ class GopherClient:
                         item = parts[0]
                         query = parts[1]
                         asyncio.run(gc.fetch(item, query=query))
-                        result = "Item Type | Filename | Selector | Host | Port | Item Type (again) | Short Description | Description | Mime Type | Size | Last Modified\n"
+                        result = "Item TypeItem Name | Selector | Host | Port | Description | Mime Type | Size | Last Modified\n"
                         for item in self.menu:
-                            print(item)
                             result += ' | '.join(item) + '\n'
                     if result is not None:
                         self.chat_history.append(('System', f"System command executed... {response}\nResult:\n{result}"))

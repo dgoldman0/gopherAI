@@ -146,7 +146,7 @@ class DataManager:
 
         # Revise to send as a string in Gopher menu format.
         host, port = self.host_port()
-        # item_line = f"{result[0]}\t{quote(result[1])}\t{path}\t{host}\t{port}\t+Description:{quote(result[2])}\t+MIME:{result[3]}\t+Size:{result[4]}\t+Modified:{result[5]}"
+        # item_line = f"{result[0]}{quote(result[1])}\t{path}\t{host}\t{port}\t+Description:{quote(result[2])}\t+MIME:{result[3]}\t+Size:{result[4]}\t+Modified:{result[5]}"
 
         return rows
     
@@ -172,7 +172,7 @@ class DataManager:
                 return None
             else:
                 host, port = self.host_port()
-                item_line = f"{result[0]}\t{quote(result[1])}\t{path}\t{host}\t{port}\t+INFO:{quote(result[2])}\t+MIME:{result[3]}\t+SIZE:{result[4]}\t+MODIFIED:{result[5]}"
+                item_line = f"{result[0]}{quote(result[1])}\t{path}\t{host}\t{port}\t+DESCRIPTION:{quote(result[2])}\t+MIME:{result[3]}\t+SIZE:{result[4]}\t+MODIFIED:{result[5]}"
                 return result[0], item_line
         else:
             c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, short_description, description, mime_type, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 

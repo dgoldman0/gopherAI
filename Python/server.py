@@ -134,11 +134,11 @@ async def inquiry(query):
         # Answer the inquiry. Should put into a loop that double checks that the format is correct. 
         host, port = data.host_port()
         # This definitely is not going to work correctly at first. 
-        # +N will be used for a natural language line.
+        # Currently +N is used for natural language response, but that's not needed. i is fine because that's an information line
         wrapped_func = functools.partial(chat_with_gpt, chat_model, [
             {"role": "system", "content": f"You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. Your local gopher server host is {host} with port {port}. The following information is available:\n{information}"},
-            {"role": "system", "content": "The format used for this server is an extended Gopher+ format. Info lines come right before their respective item lines and are of format +INFO: {item_type}\t{name}\t{description}\t{mime_type}\t{size}\t{last_modified}"},
-            {"role": "system", "content": "Respond to the user's query, based on the information that you have. The response should follow the Gopher Menu format. However, in addition to the basic options, menu options can start with +N indicating a natural language response. These lines can be used to give natural language information related to the inquiry, for instance, if the system was asked whether or not the server has information on a specific topic, the +N line can be used to indicate that it does or does not. If it does, some items found that fit may follow, again using the modified Gopher Menu format:"},
+            {"role": "system", "content": "The format used for this server is an extended Gopher+ format. The item line starts out as usual {item_type}\t{name}\t{selector}\t{host}\t{port} and then can be extended. To extend just continue adding more tab separated paramters. The parameter must start with +[PARAMETER]:. The following parameters are mandatory and must be included to create a menu item as so: {item_type}\t{name}\t{selector}\t{host}\t{port}\t+DESCRIPTION:{extended description}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}"},
+            {"role": "system", "content": "Respond to the user's query, based on the information that you have. The response should follow the Gopher Menu format. However, in addition to the basic options, menu items can be of item type i indicating general information. These lines can be used to give natural language information related to the inquiry, for instance, if the system was asked whether or not the server has information on a specific topic, the i item type can be used to indicate that it does or does not. If it does, some items found that fit may follow, again using the modified Gopher Menu format:"},
             {"role": "user", "content": query},
         ])
         inquiry_result = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
@@ -246,6 +246,7 @@ async def get_item_info(name, path):
         description = name  # Use the file name as the description for other file types
 
     data.item_info(name, path, last_modified, it, short_description, description, mime_type, size)
+
     return it, f'{it}{quote(short_description)}\t{path}\t{host}\t{port}\t+DESCRIPTION:{quote(description)}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}'
     # Will have to default to error otherwise...
 
@@ -299,10 +300,10 @@ async def handle_client(reader, writer):
             timestamp = os.path.getmtime(path)
             dt = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
             dt = dt.split('.')[0] + 'Z'
-            items.append(f'7Server Inquiry\t/inquiry\t{host}\t{port}\t+DESCRIPTION:Built in System Inquiry.\nYou may perform a system inquiry that will return a menu, possibly including adidtional information.\nYou may use the standard query format, or you may start the search query with INQUIRY: to perform an advanced natural language inquiry.\t+MIME:application/gopher-menu\SIZE:t-1\tMODIFIED:{dt}')
+            inquiry_description = quote("Built in System Inquiry.\nYou may perform a system inquiry that will return a menu, possibly including adidtional information.\nYou may use the standard query format, or you may start the search query with INQUIRY: to perform an advanced natural language inquiry.")
+            items.append(f'7Server Inquiry\t/inquiry\t{host}\t{port}\t+DESCRIPTION:{inquiry_description}\t+MIME:application/gopher-menu\t+SIZE:-1\t+MODIFIED:{dt}')
 
         response = '\r\n'.join(items) + '\r\n.'
-        print(response)
         writer.write(response.encode('utf-8'))
     elif os.path.isfile(path):
         extension = get_extension(path)
