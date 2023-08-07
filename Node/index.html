@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gopher Client</title>
+    <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Chat Area -->
+        <div class="chat-section">
+            <div class="chat-history" id="chatHistory"></div>
+            <input type="text" class="command-prompt" id="commandPrompt" placeholder="Enter command...">
+        </div>
+
+        <!-- File Information Area -->
+        <div class="file-section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Filetype</th>
+                        <th>Filename</th>
+                        <th>Size</th>
+                        <th>Last Modified</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody id="fileTableBody">
+                    <!-- Rows of file information will be added here dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script src="renderer.js"></script>
+</body>
+</html>

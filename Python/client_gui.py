@@ -6,6 +6,7 @@ import asyncio
 import aiofiles
 import os
 import subprocess
+from urllib.parse import unquote
 
 import tkinter.filedialog
 
@@ -193,30 +194,30 @@ class GopherClient:
             if not query and selector != '':
                 self.location += selector + '/'
 
-            item_info = None
             data = ""
+            # This isn't set up right anymore, because it seems that the correct method is to not send the +INFO line and the basic version for the same item.
             while True:
                 line = await reader.readline()
                 if not line or line == b'.':
                     break
                 line = line.decode('utf-8').rstrip()
                 data += line + "\n"
-                if line.startswith('+INFO: '):
-                    item_info = line[7:].split('\t')
-                else:
-                    parts = line.split('\t')
-                    item = [parts[0][0], parts[0][1:]] + parts[1:]
-                    if item_info is not None:
-                        item.extend(item_info)
-                    item_info = None
-                    temp_menu.append(item)
+
+                parts = line.split('\t')
+                item = parts # Need to change
+                if item_info is not None:
+                    item.extend(item_info)
+                item_info = None
+                temp_menu.append(item)
 
         writer.close()
-        if temp_menu:  # if the fetched menu is not empty
+        if len(temp_menu) > 0:  # if the fetched menu is not empty
             self.menu = temp_menu  # set current menu to the fetched menu
             self.menu_history.append((self.location, self.menu))  # add fetched menu to the history
             if len(self.menu_history) > 1:
                 self.back_button.config(state=tk.NORMAL)  # enable back button
+            self.root.after(100, self.populate_tree)
+
         await writer.wait_closed()
 
         return data
@@ -280,7 +281,6 @@ class GopherClient:
             else:
                 asyncio.run(self.fetch(filename, download = True))
 
-            root.after(100, self.populate_tree)
 
         tree.bind('<Double-1>', on_select)  # Bind double click to on_select
         root.mainloop()
@@ -309,6 +309,8 @@ class GopherClient:
         clicked_item = self.chat_box.tk.call(self.chat_box._w, "href", event.x, event.y)
         if clicked_item:
             print(f"Clicked on link: {clicked_item}")
+            # Perform your action here
+            return "break"  # This stops the event from propagating further
 
     def chat_window(self):
         if not hasattr(self, 'chat_history'):
@@ -338,7 +340,7 @@ class GopherClient:
         self.update_chat_box()
         chat_root.mainloop()
 
-    
+    # Tends not to work on a second round. It tries to respond without selecting "none..."
     def process_prompt(self):
         prompt = self.input_box.get()
         if prompt:
@@ -346,11 +348,16 @@ class GopherClient:
             self.input_box.delete(0, tk.END)  # clear input box
 
             # Check if we need to gather additional information. 
+            error = False
             while True:
                 # I need the instructions very specific, but maybe I can break it up into multiple system prompts, and maybe tack on temporary system prompts saying when the system misbehaves.
-                system_message = {"role": "system", "content": f"You are a helpful assistant. This is the data collection phase. Before you can repsond to the user, you must double check to make sure you don't need to perform any internal commands. You can perform a number of operations, or just answer questions in general. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nDo you need to perform any additional functions before answering responding to the user? Here are the following options:\n- fetch [path, without leading /, so just fetch if you're fetching root]: fetches an item from the current gopher server.\n- hop [host] [port] - hop to a different Gopher server\n- none (by itself): specifies that there's no need for additional information and to continue to the response stage.\n Please select a command to execute or none. Your response must start with a valid command. You will have a chance to write a full response after your data collection has been completed by selecting **none**. "}
+                system_message = {"role": "system", "content": f"You are a helpful assistant. This is the data collection phase. Before you can repsond to the user, you must double check to make sure you don't need to perform any internal commands. You can perform a number of operations, or just answer questions in general. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nDo you need to perform any additional functions before answering responding to the user? Here are the following options:\n- fetch [path, without leading /, so just fetch if you're fetching root]: fetches an item from the current gopher server.\n- hop [host] [port] - hop to a different Gopher server\n - query [item] [query]: queries an item with the given query.\n- none (by itself): specifies that there's no need for additional information and to continue to the response stage.\n Please select a command to execute or none. Your response must start with a valid command. You will have a chance to write a full response after your data collection has been completed by selecting **none**. Again, the assistant must select none here to terminate the data collection phase if it is already ready to answer."}
                 messages = [{"role": role.lower(), "content": content} for role, content in self.chat_history]
-                messages.insert(0, system_message)            
+#                messages.apepnd({"role": "system", "content": "This version of Gopher has a number of extensions, including advanced search."})
+                messages.append(system_message)            
+                if error:
+                    messages.append({"role": "system", "content": "This is the assistant's second attempt. The assistant previously did not select a valid command. Perhaps the assistant meant to select none because it can already reply with the information it had."})
+                    error = False
 
                 # Process prompt.
                 response = chat_with_gpt(chat_model, messages)
@@ -379,11 +386,24 @@ class GopherClient:
                         for item in self.menu:
                             print(item)
                             result += ' | '.join(item) + '\n'
+                    elif command == "hop":
+                        pass
+                    elif command == "query":
+                        # Handle search query here.
+                        parts = parameters.split(' ', 1)
+                        item = parts[0]
+                        query = parts[1]
+                        asyncio.run(gc.fetch(item, query=query))
+                        result = "Item Type | Filename | Selector | Host | Port | Item Type (again) | Short Description | Description | Mime Type | Size | Last Modified\n"
+                        for item in self.menu:
+                            print(item)
+                            result += ' | '.join(item) + '\n'
                     if result is not None:
                         self.chat_history.append(('System', f"System command executed... {response}\nResult:\n{result}"))
                     else:
-                        # Unknown command must have been interested. Ignored. 
-                        pass
+                        print(messages)
+                        error = True
+
             # Would really be great to bring back my personality profile system from SAM. 
             system_message = {"role": "system", "content": f"You are a helpful assistant. The following is some general information.\n\nServer: {self.host}:{self.port}\n\nDate and Time (UTC): {datetime.now(timezone.utc)}\n\nCurrent Directory: {self.location}\n\nRespond to the most recent user prompt. Be polite, and semi formal, but not obnoxious or stuck up. Use full markdown."}
             messages = [{"role": role.lower(), "content": content} for role, content in self.chat_history]

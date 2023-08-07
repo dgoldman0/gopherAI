@@ -59,6 +59,12 @@ As Gopher+NLP continues to evolve, we remain committed to enhancing and adapting
 
 We envisage Gopher+NLP as a transformative step towards more intuitive, efficient AI-data interactions. We anticipate challenges related to query ambiguity, data privacy, and scalability. However, we are committed to addressing these challenges as we continue to develop and refine Gopher+NLP.
 
+### Integration with Obsidian
+
+A really great option would be to integrate a server-client system into Obsidian. 
+
+Obsidian is a WYSIWYG editor for markdown. It's an easy to use and very powerful system. With Obsidian integration, people would be able to quickly launch information repositories. 
+
 ## Contribute
 
 We invite developers, data scientists, AI enthusiasts, and innovators to contribute to this exciting project. Join us in shaping the future of natural language interfaces and usher in a new era of data accessibility and interaction.

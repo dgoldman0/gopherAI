@@ -2,7 +2,7 @@ from lark import Lark, Transformer, v_args, Tree
 import sqlite3
 import re
 from datetime import datetime
-
+from urllib.parse import quote
 conn = None
 
 from lark import Lark, Transformer, v_args, Tree
@@ -19,7 +19,7 @@ grammar = """
     and_test: not_test ("AND" not_test)*
     not_test: "NOT" not_test | comparison
     comparison: column ("=" | "!=" | ">" | ">=" | "<" | "<=" | "LIKE") value
-    column: "name" | "path" | "last_modified" | "item_type" | "info"
+    column: "name" | "path" | "last_modified" | "item_type" | "short_description" | "description"
     value: ESCAPED_STRING | SIGNED_INT | DATETIME
     DATETIME: /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/
     %import common.ESCAPED_STRING
@@ -64,7 +64,8 @@ class QueryTransformer(Transformer):
             'path': 'TEXT',
             'last_modified': 'DATETIME',
             'item_type': 'TEXT',
-            'info': 'TEXT'
+            'short_description': 'TEXT',
+            'description': 'TEXT'
         }
         return column_types[column]
 
@@ -106,7 +107,7 @@ class DataManager:
         c = self.conn.cursor()
         c.execute('''
                 CREATE TABLE IF NOT EXISTS items
-                (name TEXT, path TEXT, last_modified TEXT, item_type TEXT, description TEXT, mime_type TEXT, size INTEGER,
+                (name TEXT, path TEXT, last_modified TEXT, item_type TEXT, short_description TEXT, description TEXT, mime_type TEXT, size INTEGER,
                 PRIMARY KEY(name, path))
                 ''')
         c.execute('''
@@ -133,7 +134,7 @@ class DataManager:
 
         # Prepare the SQL query
         sql_query = f"""
-            SELECT *
+            item_type, short_description, description, mime_type, size, last_modified
             FROM items
             WHERE {sql_where_clause}
         """
@@ -145,6 +146,7 @@ class DataManager:
 
         # Revise to send as a string in Gopher menu format.
         host, port = self.host_port()
+        # item_line = f"{result[0]}\t{quote(result[1])}\t{path}\t{host}\t{port}\t+Description:{quote(result[2])}\t+MIME:{result[3]}\t+Size:{result[4]}\t+Modified:{result[5]}"
 
         return rows
     
@@ -160,20 +162,21 @@ class DataManager:
             return result[0]
 
     # Get the item info or None associated with name and path, if last_modified is None, else set the entry.
-    def item_info(self, name, path, last_modified=None, item_type=None, description=None, mime_type=None, size=None):
+    def item_info(self, name, path, last_modified=None, item_type=None, short_description=None, description=None, mime_type=None, size=None):
         c = self.conn.cursor()
 
         if last_modified is None:
-            c.execute("SELECT item_type, name, description, mime_type, size, last_modified FROM items WHERE name=? AND path=?", (name, path))
+            c.execute("SELECT item_type, short_description, description, mime_type, size, last_modified FROM items WHERE name=? AND path=?", (name, path))
             result = c.fetchone()
             if result is None:
                 return None
             else:
-                info_line = f"+INFO: {result[0]}\t{name}\t{result[2]}\t{result[3]}\t{result[4]}\t{result[5]}"
-                return result[0], info_line
+                host, port = self.host_port()
+                item_line = f"{result[0]}\t{quote(result[1])}\t{path}\t{host}\t{port}\t+INFO:{quote(result[2])}\t+MIME:{result[3]}\t+SIZE:{result[4]}\t+MODIFIED:{result[5]}"
+                return result[0], item_line
         else:
-            c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, description, mime_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-                    (name, path, last_modified, item_type, description, mime_type, size))
+            c.execute("INSERT OR REPLACE INTO items (name, path, last_modified, item_type, short_description, description, mime_type, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+                    (name, path, last_modified, item_type, short_description, description, mime_type, size))
         self.conn.commit()
 
     def close(self):

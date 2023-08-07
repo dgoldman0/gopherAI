@@ -11,12 +11,15 @@ import re
 import subprocess
 import urllib.parse
 import yaml
+from urllib.parse import quote
 
 from data import DataManager
 
 data = DataManager("gopher.db")
 
 # Helpful info: https://datatracker.ietf.org/doc/html/rfc4266
+# Also helpful: https://www.w3.org/Addressing/URL/4_1_Gopher+.html
+# Not sure I want to adhere to the exact Gopher+ format
 
 chat_model = 'gpt-4'
 
@@ -161,7 +164,7 @@ async def generate_ai_response(giap_data, parameters):
     # Here, we're using run_in_executor to run the API call in a separate thread.
     return await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
 
-# Seems to be hanging somewhere pretty early on. 
+# I'm not sure if I should change "name" somehow. And maybe "name" should also be generated, so maybe I should just be using "path" or "selector"
 async def get_item_info(name, path):
     # Doesn't handle not found item yet...
     last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
@@ -177,7 +180,7 @@ async def get_item_info(name, path):
             item_type, info_line = await get_item_info(iname, os.path.join(path, iname))  # unpack both return values
             items += info_line + "\n"
 
-        # Generate the +INFO line
+        # Generate an item summary.
         wrapped_func = functools.partial(chat_with_gpt, chat_model, [
             {"role": "system", "content": "You are a gopher client assistor categorizing files. Summarize the following directory listing."},
             {"role": "user", "content": items}
@@ -198,6 +201,8 @@ async def get_item_info(name, path):
 
     # Get the size of the file
     size = os.path.getsize(path)
+    # Will have it generate differently in the future
+    short_description = name
 
     # Check if basic known extensions, including giap
     if extension == "giap":
@@ -240,8 +245,8 @@ async def get_item_info(name, path):
     else:
         description = name  # Use the file name as the description for other file types
 
-    data.item_info(name, path, last_modified, it, description, mime_type, size)
-    return it, f'+INFO: {it}\t{path}\t{description}\t{mime_type}\t{size}\t{last_modified}'
+    data.item_info(name, path, last_modified, it, short_description, description, mime_type, size)
+    return it, f'{it}{quote(short_description)}\t{path}\t{host}\t{port}\t+DESCRIPTION:{quote(description)}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}'
     # Will have to default to error otherwise...
 
 async def is_binary(name, path):
@@ -273,7 +278,7 @@ async def handle_client(reader, writer):
     else:
         path = ROOT_DIR
 
-    if path.startswith('/search\t'):
+    if path.startswith('/inquiry\t'):
         # I need to decide whether to go with the search results info or double check the last modified date. 
         response = (await inquiry(path[8:])) + "\r\n."
 
@@ -285,18 +290,16 @@ async def handle_client(reader, writer):
         names = os.listdir(path)
         items = []
         for name in names:
-            item_type, info_line = await get_item_info(name, os.path.join(path, name))  # unpack both return values
+            item_type, menu_item = await get_item_info(name, os.path.join(path, name))  # unpack both return values
             # I don't remember what this part does...
 #            selector = os.path.join(data, name) if data else name
-            items.append(info_line)  # include the +INFO line in the directory listing
-            items.append(f'{item_type}{name}\t{name}\t{host}\t{port}')
+            items.append(menu_item)
         # Tack on search in root directory listing.
         if path == ROOT_DIR:
             timestamp = os.path.getmtime(path)
             dt = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
             dt = dt.split('.')[0] + 'Z'
-            items.append(f'+INFO: 7\t/search\tSimple Search\tapplication/gopher-menu\t-1\t{dt}')
-            items.append(f'7Search\t/search\t{host}\t{port}')
+            items.append(f'7Server Inquiry\t/inquiry\t{host}\t{port}\t+DESCRIPTION:Built in System Inquiry.\nYou may perform a system inquiry that will return a menu, possibly including adidtional information.\nYou may use the standard query format, or you may start the search query with INQUIRY: to perform an advanced natural language inquiry.\t+MIME:application/gopher-menu\SIZE:t-1\tMODIFIED:{dt}')
 
         response = '\r\n'.join(items) + '\r\n.'
         print(response)

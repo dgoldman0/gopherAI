@@ -1,3 +1,8 @@
 gopher.db
 __pycache__
 __pycache__/data.cpython-310.pyc
+Node/node_modules/.package-lock.json
+Node/package.json
+Node/package-lock.json
+Node/node_modules/
+__pycache__/data.cpython-310.pyc
