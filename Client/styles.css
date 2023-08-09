@@ -1,0 +1,82 @@
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.command-bar {
+    display: flex;
+    align-items: center;
+}
+
+.command-prompt {
+    flex: 1;  /* Let the input take up the remaining space */
+    margin-right: 10px;  /* Add some space between input and button */
+}
+
+.submit-command {
+    background-color: #4CAF50;  /* Example color */
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+.submit-command:hover {
+    background-color: #45a049;  /* Darken color on hover */
+}
+
+.chat-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #ddd;
+}
+
+.chat-history {
+    flex: 1;
+    overflow-y: scroll;
+    padding: 10px;
+}
+
+.file-section {
+    flex: 1;
+    padding: 10px;
+    overflow-y: scroll;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+table, th, td {
+    border: 1px solid #ddd;
+}
+
+th, td {
+    padding: 8px;
+    text-align: left;
+}
+
+body {
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+}
+
+/* Make table rows look clickable */
+table tr {
+    cursor: pointer; /* Makes the cursor look like a hand pointer on hover */
+    transition: background-color 0.2s; /* Smooth transition for hover effect */
+}
+
+/* Hover effect */
+table tr:hover {
+    background-color: #f5f5f5; /* A light gray background on hover */
+}
+
+/* Active click effect */
+table tr:active {
+    background-color: #e0e0e0; /* A slightly darker gray when actively clicking */
+}

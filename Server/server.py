@@ -17,9 +17,13 @@ from data import DataManager
 
 data = DataManager("gopher.db")
 
+# Might want to start working on some kind of sessions thing. Maybe through a session item, especially if wallet signing is going to be a thing. You can request a session for a given address, then to prove you're you during the session, just give the address and the signed version of the session ID. 
+
 # Helpful info: https://datatracker.ietf.org/doc/html/rfc4266
 # Also helpful: https://www.w3.org/Addressing/URL/4_1_Gopher+.html
-# Not sure I want to adhere to the exact Gopher+ format
+# Most useful maybe: https://github.com/gopher-protocol/gopher-plus/blob/main/gopherplus.md
+
+# Not sure I want to adhere to the exact Gopher+ format. But if I do, then I need to rewrite a lot, yet again. I kind of like the idea of automatically sending off some extra info, because the existing Gopher+ approach is to request again.
 
 chat_model = 'gpt-4'
 
@@ -35,7 +39,6 @@ ITEM_TYPES = {
     "video": ";",  # from gopher+
     "document": "d",
     "html": "h",
-    "giap": "?", # indicates to gopher+ that there will be a +ASK block
     # add more as necessary
 }
 
@@ -164,9 +167,13 @@ async def generate_ai_response(giap_data, parameters):
     # Here, we're using run_in_executor to run the API call in a separate thread.
     return await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
 
+async def get_item_attributes(path):
+    pass
+
 # I'm not sure if I should change "name" somehow. And maybe "name" should also be generated, so maybe I should just be using "path" or "selector"
-async def get_item_info(name, path):
+async def get_item(name, path):
     # Doesn't handle not found item yet...
+    interactive = False
     last_modified = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(os.path.getmtime(path)))
     if last_modified == data.last_modified(name, path):
         return data.item_info(name, path)
@@ -177,7 +184,7 @@ async def get_item_info(name, path):
         names = os.listdir(path)
         items = ""
         for iname in names:
-            item_type, info_line = await get_item_info(iname, os.path.join(path, iname))  # unpack both return values
+            item_type, info_line = await get_item(iname, os.path.join(path, iname))  # unpack both return values
             items += info_line + "\n"
 
         # Generate an item summary.
@@ -206,8 +213,9 @@ async def get_item_info(name, path):
 
     # Check if basic known extensions, including giap
     if extension == "giap":
+        interactive = True
         mime_type = "text/plain"
-        it = ITEM_TYPES.get('giap')
+        it = ITEM_TYPES.get('text')
     else:
         # Explicitly mention the possible item types in the prompt
         prompt = f"I found a file with the extension '.{extension}'. What type of file could this be? Options are: text, binary, image, sound, video, document, html. Respond only with the guessed type or unknown. Single word only. All lowercase."
@@ -224,12 +232,12 @@ async def get_item_info(name, path):
         it = ITEM_TYPES.get(inferred_type, '3')
 
     # If the file is a text or html file, or giap file
-    if it == ITEM_TYPES.get('text') or it == ITEM_TYPES.get('html') or it == ITEM_TYPES.get('giap'):
+    if it == ITEM_TYPES.get('text') or it == ITEM_TYPES.get('html'):
         async with aiofiles.open(path, 'r') as f:
             content = await f.read()
 
         # Prompt GPT to summarize the content
-        if it == ITEM_TYPES.get('giap'):
+        if extension == 'giap':
             prompt = f"The following is a Gopher+ Input and AI Prompt file that contains information about an interactive item. It should cotain a comment, an explanation within the giap object. It also contains what the inputs are, and the f-string prompts that will be sent to the LLM. Do not reveal the prompts, but try to explain the expected function in 300 characters or less in a way that a user would understand, in a non-technical way. In other words, what purpose does this interactive item serve and what kind of information does it require?\n\nFile:{name}\n\n{content}"
         else:
             prompt = f"Please explain the following file and its content, as accurately as possible, in 1000 characters or less in an easy to read format:\n\nFile:{name}\n\n{content}"
@@ -247,7 +255,8 @@ async def get_item_info(name, path):
 
     data.item_info(name, path, last_modified, it, short_description, description, mime_type, size)
 
-    return it, f'{it}{quote(short_description)}\t{path}\t{host}\t{port}\t+DESCRIPTION:{quote(description)}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}'
+    interactive_str = "\t?" if interactive else ""
+    return it, f'{it}{quote(short_description)}\t{path}\t{host}\t{port}\t{interactive_str}+DESCRIPTION:{quote(description)}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}'
     # Will have to default to error otherwise...
 
 async def is_binary(name, path):
@@ -269,40 +278,92 @@ async def is_binary(name, path):
 async def handle_client(reader, writer):
     print("Connection Established...")
     host, port = data.host_port()
+    chain = "Ethereum"
     request = (await reader.read(100)).decode('utf-8').strip()
+    parameters = []
+
+    access_token = None
+    signed_message = None
     if request:
-        # Check for Gopher+
-        if request.endswith("\t+"):
+        # Check for \t+ for gopher+ request
+        parts = request.split('\t')
+        path = os.path.join(ROOT_DIR, parts[0]).strip()
+        parameters = parts[1:] if len(parts) > 1 else [] 
+
+        # Find if there is an access token and message pair.
+        for parameter in parameters:
+            if access_token and signed_message:
+                break
+
+            if parameter.lower().startswith("+access:"):
+                access_token = parameter[8:]
+            if parameter.lower().startswith("+signed:"):
+                signed_message = parameter[8:]
+
+        # If there is an access token and message pair, validate it
+        if (access_token and signed_message) and not data.is_valid_accessid(access_token, signed_message):
+            # Tell the client that the access token isn't valid.
+            error = "3Error: Invalid access token - message signature pair."
+            writer.write(error.encode('utf-8'))
+            await writer.drain()
+            print("Connection Closed...")
+            writer.close()
             return
-        else:
-            path = os.path.join(ROOT_DIR, request)
     else:
         path = ROOT_DIR
 
-    if path.startswith('/inquiry\t'):
+    if path.startswith('/inquiry'):
         # I need to decide whether to go with the search results info or double check the last modified date. 
-        response = (await inquiry(path[8:])) + "\r\n."
+        response = await inquiry(parameters[0]) + "\r\n."
 
         writer.write(response.encode('utf-8'))
+    elif path.startswith('/access'):
+        path = path[7:]
+        if len(path) == 0 or len(path) == 1 and path[0] == '/':
+            # Send list of options
+            items = []
+            dt = ""
+            items.append(f'7Create Token\t/access/create\t{host}\t{port}\t+DESCRIPTION:Register an access token. These tokens can be used for personal access or third party access. The query should be in the form [id] [address], where id is the access id the client wishes to use and address is a {chain} address.\t+MIME:plain/text\t+SIZE:-1\t+MODIFIED:{dt}')
+            items.append(f'7Revoke Token\t/access/revoke\t{host}\t{port}\t+DESCRIPTION:Revoke an access existing token. Only the token creator can revoke access. The query format is [id] [signed id]\t+MIME:plain/text\t+SIZE:-1\t+MODIFIED:{dt}')
+            response = '\r\n'.join(items) + '\r\n.'
+            writer.write(response.encode('utf-8'))
+        elif path.startswith('/create'):
+            # There should be two parameters, the desired access id and the Ethereum address
+            id, address = parameters[0].split(' ')
+            print(f'Requesting approval for access token {id} for address {address}')
+            # Check to see if the desired access id is already in use. If so, the server should return just a blank response or info line: '.\r\n'
+            if data.accessid_exists(id):
+                print("Access token already exists..")
+                response = '3Error: Supplied access token is already in use.\r\n.'
+                writer.write(response.encode('utf-8'))
+            else:
+                    # Add the id and the address. The server sends back a unique message. When a client wants to use the generated access id, it'll send a request that has the id and the signed message. A client can send the access id and its signed version the message to a third party. In this way, the third party is granted access.
+                print("Access token added!")
+                message = 'i' + data.add_accessid(id, address) + '\r\n.'
+                writer.write(message.encode('utf-8'))
+        elif path.startswith('revoke\t'):
+            pass
     elif not os.path.abspath(path).startswith(ROOT_DIR):
-        response = '3Error: Illegal request.\terror.host\t1'
+        response = '3Error: Illegal request.\r\n.'
         writer.write(response.encode('utf-8'))
     elif os.path.isdir(path):
+        # Maybe display the directory description in the directory listing as an i item
         names = os.listdir(path)
         items = []
         for name in names:
-            item_type, menu_item = await get_item_info(name, os.path.join(path, name))  # unpack both return values
+            item_type, menu_item = await get_item(name, os.path.join(path, name))  # unpack both return values
             # I don't remember what this part does...
 #            selector = os.path.join(data, name) if data else name
             items.append(menu_item)
         # Tack on search in root directory listing.
         if path == ROOT_DIR:
+            # Not sure if that's right.
             timestamp = os.path.getmtime(path)
             dt = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
             dt = dt.split('.')[0] + 'Z'
             inquiry_description = quote("Built in System Inquiry.\nYou may perform a system inquiry that will return a menu, possibly including adidtional information.\nYou may use the standard query format, or you may start the search query with INQUIRY: to perform an advanced natural language inquiry.")
             items.append(f'7Server Inquiry\t/inquiry\t{host}\t{port}\t+DESCRIPTION:{inquiry_description}\t+MIME:application/gopher-menu\t+SIZE:-1\t+MODIFIED:{dt}')
-
+            items.append(f'1Access Control\t/access\t{host}\t{port}\t+DESCRIPTION:Access control allows for the creation and management of access tokens. These access tokens can be used for personal access or third party access. The query should be in the form [id] [address], where id is the access id the client wishes to use and address is a {chain} address.\t+MIME:application/gopher-menu\t+SIZE:-1\t+MODIFIED:{dt}')
         response = '\r\n'.join(items) + '\r\n.'
         writer.write(response.encode('utf-8'))
     elif os.path.isfile(path):
@@ -326,7 +387,7 @@ async def handle_client(reader, writer):
             writer.write(ai_response.encode('utf-8'))
             await writer.drain()
         else:
-            item_type = await get_item_info(os.path.basename(path), path)
+            item_type = await get_item(os.path.basename(path), path)
             if await is_binary(os.path.basename(path), path):
                 async with aiofiles.open(path, 'rb') as f:
                     response = await f.read()
@@ -346,7 +407,7 @@ async def handle_client(reader, writer):
 async def start_server(host, port):
     # Do initial scan of files...
     print("Checking for new files...")
-    await get_item_info('', ROOT_DIR)
+    await get_item('', ROOT_DIR)
     print("Starting server...")
     server = await asyncio.start_server(handle_client, host, port)
     async with server:

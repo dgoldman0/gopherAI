@@ -8,6 +8,8 @@ Gopher+NLP extends the Gopher+ protocol to better cater to the increasing relian
 
 - **Discoverability**: Gopher+NLP empowers AI systems to efficiently navigate and interact with data sources, leveraging the human-readable directories and item descriptions of Gopher+.
 
+- **Advanced Inquiry**: Gopher always had the option of search tools. With natural language processing, instead of just a simple search, the official server implementation includes a natural language inquiry system that allows for natural language questions to be answered regarding the information available. 
+
 - **Ease of Use**: Gopher+NLP simplifies AI-data interactions by providing a text-based medium that aligns with the inherent strengths of AI language models, enabling them to focus on data analysis and response generation.
 
 - **Uniformity**: Gopher+NLP ensures consistent request and response structures, allowing seamless communication with various services without the need to handle service-specific requirements.
@@ -63,7 +65,7 @@ We envisage Gopher+NLP as a transformative step towards more intuitive, efficien
 
 A really great option would be to integrate a server-client system into Obsidian. 
 
-Obsidian is a WYSIWYG editor for markdown. It's an easy to use and very powerful system. With Obsidian integration, people would be able to quickly launch information repositories. 
+Obsidian is a WYSIWYG editor for markdown. It's an easy to use and very powerful system. With Obsidian integration, people would be able to quickly launch information repositories. An Obsidian vault of thoughts and ideas could quickly become a whole information space that people could search through, and query using interactive items or just the built in inquiry operation.
 
 ## Contribute
 

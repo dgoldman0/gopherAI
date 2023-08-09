@@ -9,18 +9,20 @@
         <!-- Chat Area -->
         <div class="chat-section">
             <div class="chat-history" id="chatHistory"></div>
-            <input type="text" class="command-prompt" id="commandPrompt" placeholder="Enter command...">
+            
+            <div class="command-bar">  <!-- Added a wrapping div for styling and layout -->
+                <input type="text" class="command-prompt" id="commandPrompt" placeholder="Enter command...">
+                <button class="submit-command" id="submitCommand">Submit</button>
+            </div>
         </div>
-
+        
         <!-- File Information Area -->
         <div class="file-section">
             <table>
                 <thead>
                     <tr>
-                        <th>Filetype</th>
-                        <th>Filename</th>
-                        <th>Size</th>
-                        <th>Last Modified</th>
+                        <th>Item Type</th>
+                        <th>Item</th>
                         <th>Description</th>
                     </tr>
                 </thead>

@@ -1,14 +1,16 @@
 from lark import Lark, Transformer, v_args, Tree
 import sqlite3
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
-conn = None
+import time
+import secrets
 
 from lark import Lark, Transformer, v_args, Tree
 import sqlite3
 import re
 from datetime import datetime
+from eth_account import Account
 
 # I want to add more data that could be useful for search, such as some kind of extra tag system. Searches should be rich.
 
@@ -110,6 +112,11 @@ class DataManager:
                 (name TEXT, path TEXT, last_modified TEXT, item_type TEXT, short_description TEXT, description TEXT, mime_type TEXT, size INTEGER,
                 PRIMARY KEY(name, path))
                 ''')
+        # Maybe rather than sessions it can be "access control"
+        c.execute('''
+                CREATE TABLE IF NOT EXISTS access
+                (access_id TEXT, address TEXT, message TEXT, created datetime)
+                ''')
         c.execute('''
                 CREATE TABLE IF NOT EXISTS settings
                 (host TEXT, port INTEGER, PRIMARY KEY(host, port))
@@ -128,6 +135,51 @@ class DataManager:
         else:
             return None
         
+    def is_valid_accessid(self, id, signed_message):
+        c = self.conn.cursor()
+        
+        # Fetch the associated row using the provided id.
+        c.execute("SELECT address, message FROM access WHERE access_id = ?", (id,))
+        row = c.fetchone()
+        
+        # If the row doesn't exist, return False.
+        if not row:
+            return False
+
+        address, original_message = row
+
+        # Verify the signed_message using the Ethereum address.
+        try:
+            recovered_address = Account.recover_message(original_message, signature=signed_message)
+            if recovered_address.lower() == address.lower():
+                return True
+        except:
+            pass
+
+        return False
+
+    def accessid_exists(self, id):
+        c = self.conn.cursor()
+        
+        # Check the count of rows with the provided id.
+        c.execute("SELECT COUNT(1) FROM access WHERE access_id = ?", (id,))
+        count = c.fetchone()[0]
+        
+        return count > 0
+ 
+    def add_accessid(self, id, address):
+        # Generate a unique message. 
+        message = f"{secrets.token_hex(16)}-{time.time()}"
+        # Add the information to the database
+        c = self.conn.cursor()
+        c.execute("INSERT INTO access (access_id, address, message, created) VALUES (?, ?, ?, datetime('now'))", (id, address, message))
+        self.conn.commit()
+        return message
+    
+    def revoke_accessid(self, id):
+        with self.conn:
+            self.conn.execute("DELETE FROM access WHERE access_id = ?", (id))
+
     def search(self, query):
         # Parse the query
         sql_where_clause = parser.parse(query)
@@ -152,7 +204,6 @@ class DataManager:
     
     # Return None if no entry found.
     def last_modified(self, name, path):
-        global conn
         c = self.conn.cursor()
         c.execute("SELECT last_modified FROM items WHERE name=? AND path=?", (name, path))
         result = c.fetchone()
