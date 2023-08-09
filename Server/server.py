@@ -24,7 +24,7 @@ data = DataManager("gopher.db")
 # Most useful maybe: https://github.com/gopher-protocol/gopher-plus/blob/main/gopherplus.md
 
 # Not sure I want to adhere to the exact Gopher+ format. But if I do, then I need to rewrite a lot, yet again. I kind of like the idea of automatically sending off some extra info, because the existing Gopher+ approach is to request again.
-
+# I think I'll start off with not, because it's just a lot easier, and then once other things are working nicely, I'll work on adjusting the protocol to be fully compatible with Gopher+ as defined in the github repo.
 chat_model = 'gpt-4'
 
 ROOT_DIR = str(Path.home() / 'gopher')

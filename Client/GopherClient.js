@@ -3,6 +3,7 @@ const querystring = require('querystring');
 
 const CRLF = '\r\n';
 
+// Will add to accomodate other things like ASK clauses later.
 class GopherMenuItem {
     constructor(type, name, selector, host, port, description = null, mime = null, size = null, modified = null) {
         this.type = type;

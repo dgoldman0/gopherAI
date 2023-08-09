@@ -67,6 +67,8 @@ A really great option would be to integrate a server-client system into Obsidian
 
 Obsidian is a WYSIWYG editor for markdown. It's an easy to use and very powerful system. With Obsidian integration, people would be able to quickly launch information repositories. An Obsidian vault of thoughts and ideas could quickly become a whole information space that people could search through, and query using interactive items or just the built in inquiry operation.
 
+With a bit of streamlining, the same Obsidian based system could function as interface and server for a new information centric way of communicating with one another on the internet. 
+
 ## Contribute
 
 We invite developers, data scientists, AI enthusiasts, and innovators to contribute to this exciting project. Join us in shaping the future of natural language interfaces and usher in a new era of data accessibility and interaction.
