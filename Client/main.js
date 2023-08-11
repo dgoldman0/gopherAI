@@ -1,8 +1,5 @@
 const { app, BrowserWindow } = require('electron');
-const Store = require('electron-store');
-//const manager = require('./WalletManager.js');
-
-const store = new Store();
+const manager = require('./WalletManager.js');
 
 let mainWindow;
 

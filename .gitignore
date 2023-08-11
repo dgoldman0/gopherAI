@@ -1,8 +1,9 @@
 gopher.db
 __pycache__
 __pycache__/data.cpython-310.pyc
-Client/node_modules/.package-lock.json
+Client/node_modules/
 Client/package.json
 Client/package-lock.json
 Client/node_modules/
 __pycache__/data.cpython-310.pyc
+Client/WalletManager.js
