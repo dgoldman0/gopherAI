@@ -1,4 +1,8 @@
 const { app, BrowserWindow } = require('electron');
+const Store = require('electron-store');
+//const manager = require('./WalletManager.js');
+
+const store = new Store();
 
 let mainWindow;
 
@@ -7,8 +11,8 @@ function createWindow() {
     width: 800,
     height: 600,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
       scrollBounce: true
     }
   });

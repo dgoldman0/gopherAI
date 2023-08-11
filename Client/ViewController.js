@@ -21,8 +21,7 @@ function getDescriptionForType(typeChar) {
 }
 
 class ViewController {
-    constructor(gopher) {
-        this.gopher = gopher;
+    constructor() {
         // Cache references to elements for performance
         this.fileTableBody = document.getElementById('fileTableBody');
         this.commandPrompt = document.getElementById('commandPrompt');
@@ -51,9 +50,9 @@ class ViewController {
                         let host = parts[1];
                         let port = parseInt(parts[2], 10);
     
-                        this.gopher.setServer(host, port); 
+                        window.gopherAPI.hop(host, port); 
                         
-                        this.gopher.fetchMenu('')
+                        window.gopherAPI.scan('')
                             .then(menuItems => {
                                 this.updateMenu(menuItems);
                             })
@@ -116,11 +115,11 @@ class ViewController {
         switch (type) {
             // Handle based on the item type
             case "1": 
-                if (this.gopher.currentHost !== host || this.gopher.currentPort !== port) {
-                    this.gopher.setServer(host, port);
+                if (window.gopherAPI.currentHost() !== host || window.gopherAPI.currentPort() !== port) {
+                    window.gopherAPI.hop(host, port);
                 }
 
-                this.gopher.fetchMenu(selector)
+                window.gopherAPI.scan(selector)
                 .then(menuItems => {
                     this.updateMenu(menuItems);
                 })
@@ -132,5 +131,3 @@ class ViewController {
         }
     }
 }
-
-module.exports = ViewController;

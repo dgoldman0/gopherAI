@@ -53,9 +53,10 @@ class GopherClient {
     constructor(host, port) {
         this.host = host;
         this.port = port;
+        this.location = "";
     }
 
-    setServer(host, port) {
+    setHost(host, port) {
         this.host = host;
         this.port = port;
     }
@@ -68,7 +69,7 @@ class GopherClient {
         // Send a query to the gopher server
     }
 
-    fetchMenu(selector) {
+    scan(selector) {
         return new Promise((resolve, reject) => {
             const socket = net.connect(this.port, this.host, () => {
                 socket.write(selector + CRLF);
