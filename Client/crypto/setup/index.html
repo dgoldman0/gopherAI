@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="card" id="password-card">
+        <h2>Select Password</h2>
+        <input type="password" id="password-input" placeholder="Enter Password">
+        <input type="password" id="confirm-password-input" placeholder="Confirm Password">
+        <span id="password-error" style="color: red;"></span>
+        <button id="next-to-import">Next &rarr;</button>
+    </div>
+    
+    <div class="card hidden" id="import-card">
+        <h2>Import/Creation</h2>
+        <!-- Content for importing or creating a wallet -->
+        <button id="next-to-naming">Next</button>
+    </div>
+
+    <div class="card hidden" id="naming-card">
+        <h2>Naming</h2>
+        <!-- Content for naming the wallet -->
+        <button id="next-to-welcome">Continue</button>
+    </div>
+
+    <div class="card hidden" id="welcome-card">
+        <h2>Welcome</h2>
+        <!-- Welcome content -->
+        <button id="finish-setup">Finish</button>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

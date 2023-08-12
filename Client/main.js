@@ -1,7 +1,9 @@
 const { app, BrowserWindow } = require('electron');
-const manager = require('./WalletManager.js');
+const { WalletManager } = require('./crypto/WalletManager.js');
 
 let mainWindow;
+
+let manager = new WalletManager();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -13,12 +15,13 @@ function createWindow() {
       scrollBounce: true
     }
   });
-
+  
   mainWindow.webContents.openDevTools();
   mainWindow.loadFile('index.html');
   mainWindow.on('closed', function() {
     mainWindow = null;
   });
+  manager.initialize(manager);
 }
 
 app.commandLine.appendSwitch('disable-gpu');
