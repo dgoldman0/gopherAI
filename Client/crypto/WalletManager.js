@@ -1,11 +1,10 @@
 const { Wallet, utils, HDNode } = require('ethers');
 const Store = require('electron-store');
 const { dialog, BrowserWindow } = require('electron')
+const path = require('path');
 
 const store = new Store();
-
-// Really need to clean up code so it doesn't use both...
-
+console.log(store);
 const crypto = require('crypto');
 
 function generateKey(password, salt) {
@@ -13,18 +12,16 @@ function generateKey(password, salt) {
 }
 
 // Should rename to just encrypt and decrypt. Plus it should be password, salt not password:salt
-function encryptMnemonic(mnemonic, password) {
-    const salt = crypto.randomBytes(16).toString('hex');
+function encrypt(mnemonic, password, salt) {
     const key = generateKey(password, salt);
 
     const cipher = crypto.createCipheriv('aes-256-cbc', key, Buffer.alloc(16, 0));
     let encrypted = cipher.update(mnemonic, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    return salt + ':' + encrypted;
+    return encrypted;
 }
 
-function decryptMnemonic(encryptedMnemonic, password) {
-    const [salt, encryptedData] = encryptedMnemonic.split(':');
+function decrypt(encryptedMnemonic, password, salt) {
     const key = generateKey(password, salt);
 
     const decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.alloc(16, 0));
@@ -39,8 +36,12 @@ class WalletManager {
     }
 
     initialize(mainWindow) {
-        this.initialize();
+        console.log("Initializing...")
         this.mainWindow = mainWindow;
+        if (!store.get('walletRoot')) {
+            console.log("Setting up wallet...");            
+            this.popupSetupWindow();
+        }
     }
 
     // Unlock the wallet using the password
@@ -51,16 +52,18 @@ class WalletManager {
 
     // Bring up the setup window
     async popupSetupWindow() {
-        // Create the browser window.
         let setupWindow = new BrowserWindow({
-            width: 400,
-            height: 300,
+            width: 550,
+            height: 400,
             webPreferences: {
                 nodeIntegration: false, // caution: this can introduce security risks
-                contextIsolation: true
+                contextIsolation: true,
+                scrollBounce: true,
+                preload: path.join(__dirname, 'setup/preload.js')
             }
         });
 
+        setupWindow.setMenu(null);
         // Load the index page for the setup interface
         await setupWindow.loadFile('./crypto/setup/index.html');
 
@@ -86,22 +89,19 @@ class WalletManager {
         return hash.toString('hex'); // Returns the hashed password
     }
 
-    async initialize() {
-        if (!store.get('walletRoot')) {
-            console.log("Initializing...")
-            
-            this.popupSetupWindow();
-        }
-    }
-
-    async createWallet() {
+    async setupWallet(password) {
         this.password = password;
-        salt = this.generateSalt();
+        let salt = this.generateSalt();
         store.set('password_salt', salt);
-        store.set('wallet_password', this.hashPassword(password, salt));
-        this.createWalletRoot();
+        store.set('hashed_password', this.hashPassword(password, salt));
+        return this.createWalletRoot();
     }
 
+    async importWallet() {
+
+    }
+
+    // Creates a new wallet root. 
     async createWalletRoot() {
         const wallet = Wallet.createRandom();
         const _mnemonic = wallet.mnemonic.phrase;
@@ -109,17 +109,16 @@ class WalletManager {
         const salt = this.generateSalt();
         
         // Encrypt and store mnemonic.
-        const encryptedMnemonic = encryptMnemonic(_mnemonic, this.password, salt);
+        const encryptedMnemonic = encrypt(_mnemonic, this.password, salt);
         
         const walletRoot = {};
         walletRoot.mnemonic = encryptedMnemonic;
         walletRoot.salt = salt;
-        walletRoot.addresses.push(wallet.address);
         walletRoot.address_uses = 1;
         // Save back to the store
         store.set('walletRoot', walletRoot);
 
-        return wallet.address;  // Return derived address
+        return _mnemonic;  // Return derived address
     }
 
     // Generate new HD Wallet address from root mnemonic
@@ -128,7 +127,7 @@ class WalletManager {
         if (!walletRootData) throw new Error("Wallet root not found.");
 
         // Decrypt mnemonic
-        const mnemonic = decryptMnemonic(walletRootData.mnemonic, this.password, walletRootData.salt);
+        const mnemonic = decrypt(walletRootData.mnemonic, this.password, walletRootData.salt);
 
         // Get the next address
         const nextAddress = this.getNthAddress(mnemonic, walletRootData.address_uses);

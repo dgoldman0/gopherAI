@@ -12,13 +12,23 @@
         <input type="password" id="password-input" placeholder="Enter Password">
         <input type="password" id="confirm-password-input" placeholder="Confirm Password">
         <span id="password-error" style="color: red;"></span>
-        <button id="next-to-import">Next &rarr;</button>
+        <button id="next-to-backup">Next &rarr;</button>
     </div>
     
-    <div class="card hidden" id="import-card">
-        <h2>Import/Creation</h2>
-        <!-- Content for importing or creating a wallet -->
+    <div class="card hidden" id="backup-card">
+        <h2>Backup Recovery Phrase</h2>
+        <div class="recovery-phrase">
+            <!-- You can populate these bubbles dynamically using JS if needed -->
+        </div>
         <button id="next-to-naming">Next</button>
+    </div>
+
+    <div class="card hidden" id="confirmation-card">
+        <h2>Mnemonic Backup Confirmation</h2>
+        <p>Please enter the entire recovery phrase to confirm you've backed it up correctly:</p>
+        
+        <textarea id="mnemonic-textarea" rows="4" placeholder="Enter the recovery phrase here..."></textarea>
+        <button id="next-to-naming">Continue</button>
     </div>
 
     <div class="card hidden" id="naming-card">
