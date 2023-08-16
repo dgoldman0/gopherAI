@@ -6,4 +6,9 @@ Client/package.json
 Client/package-lock.json
 Client/node_modules/
 __pycache__/data.cpython-310.pyc
-Client/WalletManager.js
+AccessPoint/node_modules/
+Browser/node_modules/
+AccessPoint/package.json
+AccessPoint/package-lock.json
+Browser/package-lock.json
+Browser/package.json

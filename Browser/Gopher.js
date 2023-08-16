@@ -65,9 +65,52 @@ class GopherClient {
         // Download the selected item (binary/text etc.), handle save operation here
     }
 
-    query(selector, query) {
-        // Send a query to the gopher server
+    // Queries, potentially receiving a menu (default) or a natural language response
+    query(selector, userQuery, nlr = false) {
+        return new Promise((resolve, reject) => {
+            // Use querystring to safely encode the userQuery
+            const encodedQuery = querystring.escape(userQuery);
+    
+            // Construct the full query
+            const fullQuery = selector + '\t' + encodedQuery + '\r\n';
+    
+            // Connect to the Gopher server
+            const socket = net.connect(this.port, this.host, () => {
+                socket.write(fullQuery);
+            });
+    
+            let dataBuffer = '';
+    
+            socket.on('data', (data) => {
+                dataBuffer += data.toString();
+                // If we detect the end of the Gopher response (a period on a new line by itself),
+                // we can process the response into menu items and resolve the promise.
+                if (dataBuffer.endsWith('\r\n.')) {
+                    // Since the result is encoded, first decode the result.
+                    const decodedResult = querystring.unescape(dataBuffer.slice(0, -3)); // Remove the ending '\r\n.' and decode
+    
+                    if (nlr) {
+                        resolve(decodedResult);
+                    } else {
+                        // Process the decoded result into a GopherMenu.
+                        const menu = this.processMenuData(decodedResult);
+                        resolve(menu);
+                    }
+                }
+            });
+    
+            socket.on('error', (error) => {
+                reject(error);
+            });
+    
+            socket.on('close', () => {
+                if (!dataBuffer.endsWith('\r\n.')) {
+                    reject(new Error('Connection closed before full data received.'));
+                }
+            });
+        });
     }
+    
 
     scan(selector) {
         return new Promise((resolve, reject) => {
@@ -141,4 +184,4 @@ class GopherClient {
     }
 }
 
-module.exports = GopherClient;
+module.exports = { GopherClient };

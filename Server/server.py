@@ -9,9 +9,8 @@ from datetime import datetime, timezone
 import mimetypes
 import re
 import subprocess
-import urllib.parse
 import yaml
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from data import DataManager
 
@@ -97,9 +96,14 @@ def chat_with_gpt(model, messages):
 # Database search augmented with AI. With AI we should be able to do complex searches and inquiries to check what kind of information is available on the server, etc. Method will respond like a traditional gopher search engine unless the search query starts with INQUIRY:, for backward compatibility. 
 # Need to inform the AI of the full modifications to the Gopher menu system including additional item types.
 async def inquiry(query):
+    nlr = False
+    if query.startswith("*INQUIRY:"):
+        nlr = True
+        query = query[1:]
     if query.startswith("INQUIRY:"):
         query = query[8:]
-        information = ""
+        information = f"The current date and time (UTC) is: {datetime.now(timezone.utc)}"
+
         # Gather additional information as necessary. Might be useful to be able to add the ability to grab actual file contents. Also, might be useful to cache information to speed up the process. 
         while True:
             # Check if additional info is needed.
@@ -138,12 +142,19 @@ async def inquiry(query):
         host, port = data.host_port()
         # This definitely is not going to work correctly at first. 
         # Currently +N is used for natural language response, but that's not needed. i is fine because that's an information line
-        wrapped_func = functools.partial(chat_with_gpt, chat_model, [
-            {"role": "system", "content": f"You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. Your local gopher server host is {host} with port {port}. The following information is available:\n{information}"},
-            {"role": "system", "content": "The format used for this server is an extended Gopher+ format. The item line starts out as usual {item_type}\t{name}\t{selector}\t{host}\t{port} and then can be extended. To extend just continue adding more tab separated paramters. The parameter must start with +[PARAMETER]:. The following parameters are mandatory and must be included to create a menu item as so: {item_type}\t{name}\t{selector}\t{host}\t{port}\t+DESCRIPTION:{extended description}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}"},
-            {"role": "system", "content": "Respond to the user's query, based on the information that you have. The response should follow the Gopher Menu format. However, in addition to the basic options, menu items can be of item type i indicating general information. These lines can be used to give natural language information related to the inquiry, for instance, if the system was asked whether or not the server has information on a specific topic, the i item type can be used to indicate that it does or does not. If it does, some items found that fit may follow, again using the modified Gopher Menu format:"},
-            {"role": "user", "content": query},
-        ])
+        if nlr:
+            wrapped_func = functools.partial(chat_with_gpt, chat_model, [
+                {"role": "system", "content": f"You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. Your local gopher server host is {host} with port {port}. The following information is available:\n{information}"},
+                {"role": "system", "content": "Respond to the user's query, based on the information that you have."},
+                {"role": "user", "content": query},
+            ])
+        else:
+            wrapped_func = functools.partial(chat_with_gpt, chat_model, [
+                {"role": "system", "content": f"You are a gopher client assistor searching through local items. You are able to search through the local database to help find items. Your local gopher server host is {host} with port {port}. The following information is available:\n{information}"},
+                {"role": "system", "content": "The format used for this server is an extended Gopher+ format. The item line starts out as usual {item_type}\t{name}\t{selector}\t{host}\t{port} and then can be extended. To extend just continue adding more tab separated paramters. The parameter must start with +[PARAMETER]:. The following parameters are mandatory and must be included to create a menu item as so: {item_type}\t{name}\t{selector}\t{host}\t{port}\t+DESCRIPTION:{extended description}\t+MIME:{mime_type}\t+SIZE:{size}\t+MODIFIED:{last_modified}"},
+                {"role": "system", "content": "Respond to the user's query, based on the information that you have. The response should follow the Gopher Menu format. However, in addition to the basic options, menu items can be of item type i indicating general information. These lines can be used to give natural language information related to the inquiry, for instance, if the system was asked whether or not the server has information on a specific topic, the i item type can be used to indicate that it does or does not. If it does, some items found that fit may follow, again using the modified Gopher Menu format:"},
+                {"role": "user", "content": query},
+            ])
         inquiry_result = await asyncio.get_running_loop().run_in_executor(None, wrapped_func)
         return inquiry_result
     else:
@@ -287,7 +298,8 @@ async def handle_client(reader, writer):
     if request:
         # Check for \t+ for gopher+ request
         parts = request.split('\t')
-        path = os.path.join(ROOT_DIR, parts[0]).strip()
+        selector = parts[0].strip()
+        path = os.path.join(ROOT_DIR, selector).strip()
         parameters = parts[1:] if len(parts) > 1 else [] 
 
         # Find if there is an access token and message pair.
@@ -312,12 +324,17 @@ async def handle_client(reader, writer):
     else:
         path = ROOT_DIR
 
-    if path.startswith('/inquiry'):
+    if selector =='inquiry':
+        query = unquote(parameters[0])
         # I need to decide whether to go with the search results info or double check the last modified date. 
-        response = await inquiry(parameters[0]) + "\r\n."
-
-        writer.write(response.encode('utf-8'))
-    elif path.startswith('/access'):
+        try:
+            response = await inquiry(query)
+            print(response)
+            writer.write((quote(response) + '\r\n.').encode('utf-8'))
+            await writer.drain()
+        except Exception as e:
+            print(f"Error: {e}")
+    elif selector =='access':
         path = path[7:]
         if len(path) == 0 or len(path) == 1 and path[0] == '/':
             # Send list of options
@@ -327,7 +344,7 @@ async def handle_client(reader, writer):
             items.append(f'7Revoke Token\t/access/revoke\t{host}\t{port}\t+DESCRIPTION:Revoke an access existing token. Only the token creator can revoke access. The query format is [id] [signed id]\t+MIME:plain/text\t+SIZE:-1\t+MODIFIED:{dt}')
             response = '\r\n'.join(items) + '\r\n.'
             writer.write(response.encode('utf-8'))
-        elif path.startswith('/create'):
+        elif selector.startswith('/create'):
             # There should be two parameters, the desired access id and the Ethereum address
             id, address = parameters[0].split(' ')
             print(f'Requesting approval for access token {id} for address {address}')
@@ -361,7 +378,7 @@ async def handle_client(reader, writer):
             timestamp = os.path.getmtime(path)
             dt = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
             dt = dt.split('.')[0] + 'Z'
-            inquiry_description = quote("Built in System Inquiry.\nYou may perform a system inquiry that will return a menu, possibly including adidtional information.\nYou may use the standard query format, or you may start the search query with INQUIRY: to perform an advanced natural language inquiry.")
+            inquiry_description = quote("Built in System Inquiry.\nYou may perform a system inquiry that will return a menu, possibly including adidtional information.\nYou may use the standard query format, or you may start the search query with INQUIRY: to perform an advanced natural language inquiry. To receive a purely natural language response rather than a menu, use *INQUIRY: instead.")
             items.append(f'7Server Inquiry\t/inquiry\t{host}\t{port}\t+DESCRIPTION:{inquiry_description}\t+MIME:application/gopher-menu\t+SIZE:-1\t+MODIFIED:{dt}')
             items.append(f'1Access Control\t/access\t{host}\t{port}\t+DESCRIPTION:Access control allows for the creation and management of access tokens. These access tokens can be used for personal access or third party access. The query should be in the form [id] [address], where id is the access id the client wishes to use and address is a {chain} address.\t+MIME:application/gopher-menu\t+SIZE:-1\t+MODIFIED:{dt}')
         response = '\r\n'.join(items) + '\r\n.'

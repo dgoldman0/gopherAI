@@ -41,6 +41,8 @@ class ViewController {
         let line = this.commandPrompt.value;
         this.commandPrompt.value = '';
     
+        if (line.trim() == "") return;
+
         if (line.startsWith('/')) {
             let parts = line.split(' ');
     
@@ -68,6 +70,8 @@ class ViewController {
                 default:
                     console.error("Unknown command:", parts[0]);
             }
+        } else {
+            window.assistantAPI.processInput(line); 
         }
     }
 
