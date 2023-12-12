@@ -1,1 +1,10 @@
-CITATION.cff
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Goldman
+    given-names: Daniel
+    orcid: https://orcid.org/0000-0003-2835-3521
+title: "GopherAI" Towards A Natural Language Internet"
+version: 0.0.1
+url: "https://github.com/dgoldman0/gopherAI"
+date-released: 2023-12-1
