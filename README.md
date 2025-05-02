@@ -6,6 +6,8 @@ Gopher+NLP extends the Gopher+ protocol to better cater to the increasing relian
 
 The final goal is to create a replacement for JSON-REST based API systems and client interfaces, where instead the server side provides a human-readable, menu driven API. Any visual interfaces needed would be generated on the client side by a special UI/UX LLM. For lack of a better comparison, for those familiar with the topic, think LCARS. 
 
+Potential Final Name: LIRAQ – Linguistic Interface for Reasoning, Agents, and Query
+
 ## Features
 
 - **Discoverability**: Gopher+NLP empowers AI systems to efficiently navigate and interact with data sources, leveraging the human-readable directories and item descriptions of Gopher+.
